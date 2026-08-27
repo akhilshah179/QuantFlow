@@ -1,0 +1,48 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  body {
+    @apply bg-[#ffffff] text-[#131722] antialiased selection:bg-[#2962ff] selection:text-white;
+    font-feature-settings: "cv02", "cv03", "cv04", "cv11";
+  }
+
+  /* Custom scrollbar for TradingView light financial UI */
+  ::-webkit-scrollbar {
+    width: 5px;
+    height: 5px;
+  }
+
+  ::-webkit-scrollbar-track {
+    background: #ffffff;
+  }
+
+  ::-webkit-scrollbar-thumb {
+    background: #e0e3eb;
+    border-radius: 2px;
+  }
+
+  ::-webkit-scrollbar-thumb:hover {
+    background: #b2b5be;
+  }
+}
+
+@layer utilities {
+  .text-glow-green {
+    color: #089981;
+  }
+  .text-glow-red {
+    color: #f23645;
+  }
+  .bg-glass {
+    background: rgba(255, 255, 255, 0.95);
+    backdrop-filter: blur(8px);
+  }
+  .tv-card {
+    @apply bg-white border border-[#e0e3eb] rounded-lg shadow-sm hover:border-[#2962ff]/40 transition-colors;
+  }
+  .tv-table-row {
+    @apply hover:bg-[#f8f9fd] border-b border-[#f0f3fa] transition-colors;
+  }
+}

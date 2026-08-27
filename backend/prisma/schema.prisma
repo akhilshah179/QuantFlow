@@ -1,0 +1,203 @@
+datasource db {
+  provider = "sqlite"
+  url      = "file:./dev.db"
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+model User {
+  id           String          @id @default(uuid())
+  email        String          @unique
+  passwordHash String?
+  name         String
+  profileImage String?
+  authProvider String          @default("email")
+  googleId     String?         @unique
+  resetToken   String?
+  resetExpires DateTime?
+  lastLoginAt  DateTime?       @default(now())
+  virtualCash  Decimal         @default(100000.00)
+  createdAt    DateTime        @default(now())
+  updatedAt    DateTime        @updatedAt
+  watchlists   Watchlist[]
+  portfolio    Portfolio?
+  orders       Order[]
+  transactions Transaction[]
+  preference   UserPreference?
+  alerts       Alert[]
+  tradeIdeas   TradeIdea[]
+  comments     Comment[]
+
+  @@map("users")
+}
+
+model Stock {
+  id        String   @id @default(uuid())
+  symbol    String   @unique
+  name      String
+  exchange  String
+  sector    String?
+  industry  String?
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([symbol])
+  @@index([name])
+  @@map("stocks")
+}
+
+model Watchlist {
+  id        String          @id @default(uuid())
+  userId    String
+  user      User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  name      String
+  isDefault Boolean         @default(false)
+  createdAt DateTime        @default(now())
+  updatedAt DateTime        @updatedAt
+  items     WatchlistItem[]
+
+  @@map("watchlists")
+}
+
+model WatchlistItem {
+  id          String    @id @default(uuid())
+  watchlistId String
+  watchlist   Watchlist @relation(fields: [watchlistId], references: [id], onDelete: Cascade)
+  symbol      String
+  addedAt     DateTime  @default(now())
+
+  @@unique([watchlistId, symbol])
+  @@index([symbol])
+  @@map("watchlist_items")
+}
+
+model Portfolio {
+  id             String    @id @default(uuid())
+  userId         String    @unique
+  user           User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  cashBalance    Decimal   @default(100000.00)
+  investedAmount Decimal   @default(0.00)
+  realizedPnL    Decimal   @default(0.00)
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+  holdings       Holding[]
+
+  @@map("portfolios")
+}
+
+model Holding {
+  id              String    @id @default(uuid())
+  portfolioId     String
+  portfolio       Portfolio @relation(fields: [portfolioId], references: [id], onDelete: Cascade)
+  symbol          String
+  quantity        Decimal
+  averageBuyPrice Decimal
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  @@unique([portfolioId, symbol])
+  @@index([symbol])
+  @@map("holdings")
+}
+
+model Order {
+  id          String       @id @default(uuid())
+  userId      String
+  user        User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  symbol      String
+  type        String
+  status      String       @default("FILLED")
+  price       Decimal
+  quantity    Decimal
+  totalAmount Decimal
+  createdAt   DateTime     @default(now())
+  transaction Transaction?
+
+  @@index([userId])
+  @@index([symbol])
+  @@map("orders")
+}
+
+model Transaction {
+  id          String   @id @default(uuid())
+  userId      String
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  orderId     String   @unique
+  order       Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  symbol      String
+  type        String
+  price       Decimal
+  quantity    Decimal
+  totalAmount Decimal
+  realizedPnL Decimal  @default(0.00)
+  createdAt   DateTime @default(now())
+
+  @@index([userId])
+  @@index([symbol])
+  @@map("transactions")
+}
+
+model UserPreference {
+  id                String   @id @default(uuid())
+  userId            String   @unique
+  user              User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  defaultTimeframe  String   @default("1D")
+  defaultIndicators String   @default("[\"SMA_20\",\"RSI_14\"]")
+  theme             String   @default("DARK")
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  @@map("user_preferences")
+}
+
+model Alert {
+  id          String    @id @default(uuid())
+  userId      String
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  symbol      String
+  targetPrice Decimal
+  condition   String    // "ABOVE" | "BELOW"
+  isActive    Boolean   @default(true)
+  triggeredAt DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  @@index([userId])
+  @@index([symbol])
+  @@map("alerts")
+}
+
+model TradeIdea {
+  id            String    @id @default(uuid())
+  userId        String
+  user          User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  symbol        String
+  title         String
+  description   String
+  chartSnapshot String?
+  likesCount    Int       @default(0)
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  comments      Comment[]
+
+  @@index([userId])
+  @@index([symbol])
+  @@map("trade_ideas")
+}
+
+model Comment {
+  id        String    @id @default(uuid())
+  ideaId    String
+  idea      TradeIdea @relation(fields: [ideaId], references: [id], onDelete: Cascade)
+  userId    String
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  content   String
+  createdAt DateTime  @default(now())
+
+  @@index([ideaId])
+  @@index([userId])
+  @@map("comments")
+}
