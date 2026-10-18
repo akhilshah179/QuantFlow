@@ -3,9 +3,7 @@ import { newsService } from '../services/newsService';
 
 export async function getMarketNews(req: Request, res: Response, next: NextFunction) {
   try {
-    const category = (req.query.category as string) || 'all';
-    const search = (req.query.search as string) || '';
-    const articles = await newsService.getMarketNews(category, search);
+    const articles = await newsService.getMarketNews();
     res.status(200).json({ success: true, data: articles });
   } catch (err) {
     next(err);

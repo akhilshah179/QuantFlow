@@ -1,5 +1,5 @@
 import prisma from '../database/client';
-import { marketDataProvider } from '../providers/MarketDataProviderRouter';
+import { marketDataProvider } from '../providers/MockMarketDataProvider';
 import { marketIngestionService } from './marketIngestionService';
 import { memoryWatchlists } from './authService';
 
@@ -16,13 +16,10 @@ export class WatchlistService {
 
       if (watchlists && watchlists.length > 0) {
         const watchlistsWithQuotes = await Promise.all(
-          watchlists.map(async (wl: any) => {
+          watchlists.map(async (wl) => {
             const itemsWithQuotes = await Promise.all(
-              wl.items.map(async (item: any) => {
-                let quote = await marketIngestionService.getLatestQuote(item.symbol);
-                if (!quote || quote.price <= 0) {
-                  quote = await marketDataProvider.getQuote(item.symbol);
-                }
+              wl.items.map(async (item) => {
+                const quote = await marketIngestionService.getLatestQuote(item.symbol);
                 return {
                   ...item,
                   price: quote ? quote.price : 0,

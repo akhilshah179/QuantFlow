@@ -28,30 +28,7 @@ export const GLOBAL_INSTRUMENT_CATALOG: Instrument[] = [
   // International Equities (LSE, DAX, Nikkei, HKEX)
   { symbol: 'SHEL', name: 'Shell plc', exchange: 'LSE', country: 'UK', currency: 'GBP', assetType: 'EQUITY', providerSymbol: 'SHEL.L', provider: 'finnhub', timezone: 'Europe/London', sector: 'Energy', marketStatus: 'LIVE' },
   { symbol: 'SAP', name: 'SAP SE', exchange: 'DAX', country: 'DE', currency: 'EUR', assetType: 'EQUITY', providerSymbol: 'SAP.DE', provider: 'finnhub', timezone: 'Europe/Berlin', sector: 'Technology', marketStatus: 'LIVE' },
-
-  // Binance Spot Crypto
-  { symbol: 'BTCUSDT', name: 'Bitcoin (BTC/USDT)', exchange: 'BINANCE_SPOT', country: 'GLOBAL', currency: 'USDT', assetType: 'CRYPTO', providerSymbol: 'BTCUSDT', provider: 'binance', timezone: 'UTC', sector: 'Digital Assets', marketStatus: 'LIVE' },
-  { symbol: 'BTCUSD', name: 'Bitcoin (BTC/USDT)', exchange: 'BINANCE_SPOT', country: 'GLOBAL', currency: 'USDT', assetType: 'CRYPTO', providerSymbol: 'BTCUSDT', provider: 'binance', timezone: 'UTC', sector: 'Digital Assets', marketStatus: 'LIVE' },
-  { symbol: 'ETHUSDT', name: 'Ethereum (ETH/USDT)', exchange: 'BINANCE_SPOT', country: 'GLOBAL', currency: 'USDT', assetType: 'CRYPTO', providerSymbol: 'ETHUSDT', provider: 'binance', timezone: 'UTC', sector: 'Digital Assets', marketStatus: 'LIVE' },
-  { symbol: 'ETHUSD', name: 'Ethereum (ETH/USDT)', exchange: 'BINANCE_SPOT', country: 'GLOBAL', currency: 'USDT', assetType: 'CRYPTO', providerSymbol: 'ETHUSDT', provider: 'binance', timezone: 'UTC', sector: 'Digital Assets', marketStatus: 'LIVE' },
-  { symbol: 'SOLUSDT', name: 'Solana (SOL/USDT)', exchange: 'BINANCE_SPOT', country: 'GLOBAL', currency: 'USDT', assetType: 'CRYPTO', providerSymbol: 'SOLUSDT', provider: 'binance', timezone: 'UTC', sector: 'Digital Assets', marketStatus: 'LIVE' },
-  { symbol: 'BNBUSDT', name: 'Binance Coin (BNB/USDT)', exchange: 'BINANCE_SPOT', country: 'GLOBAL', currency: 'USDT', assetType: 'CRYPTO', providerSymbol: 'BNBUSDT', provider: 'binance', timezone: 'UTC', sector: 'Digital Assets', marketStatus: 'LIVE' },
-  { symbol: 'XRPUSDT', name: 'XRP (XRP/USDT)', exchange: 'BINANCE_SPOT', country: 'GLOBAL', currency: 'USDT', assetType: 'CRYPTO', providerSymbol: 'XRPUSDT', provider: 'binance', timezone: 'UTC', sector: 'Digital Assets', marketStatus: 'LIVE' },
-  { symbol: 'ADAUSDT', name: 'Cardano (ADA/USDT)', exchange: 'BINANCE_SPOT', country: 'GLOBAL', currency: 'USDT', assetType: 'CRYPTO', providerSymbol: 'ADAUSDT', provider: 'binance', timezone: 'UTC', sector: 'Digital Assets', marketStatus: 'LIVE' },
-  { symbol: 'AVAXUSDT', name: 'Avalanche (AVAX/USDT)', exchange: 'BINANCE_SPOT', country: 'GLOBAL', currency: 'USDT', assetType: 'CRYPTO', providerSymbol: 'AVAXUSDT', provider: 'binance', timezone: 'UTC', sector: 'Digital Assets', marketStatus: 'LIVE' },
-  { symbol: 'DOGEUSDT', name: 'Dogecoin (DOGE/USDT)', exchange: 'BINANCE_SPOT', country: 'GLOBAL', currency: 'USDT', assetType: 'CRYPTO', providerSymbol: 'DOGEUSDT', provider: 'binance', timezone: 'UTC', sector: 'Digital Assets', marketStatus: 'LIVE' },
-
-  // Forex Currency Pairs
-  { symbol: 'EURUSD', name: 'EUR / USD', exchange: 'FOREX', country: 'GLOBAL', currency: 'USD', assetType: 'FOREX', providerSymbol: 'EUR/USD', provider: 'twelvedata', timezone: 'UTC', sector: 'Currencies', marketStatus: 'LIVE' },
-  { symbol: 'GBPUSD', name: 'GBP / USD', exchange: 'FOREX', country: 'GLOBAL', currency: 'USD', assetType: 'FOREX', providerSymbol: 'GBP/USD', provider: 'twelvedata', timezone: 'UTC', sector: 'Currencies', marketStatus: 'LIVE' },
-  { symbol: 'USDJPY', name: 'USD / JPY', exchange: 'FOREX', country: 'GLOBAL', currency: 'JPY', assetType: 'FOREX', providerSymbol: 'USD/JPY', provider: 'twelvedata', timezone: 'UTC', sector: 'Currencies', marketStatus: 'LIVE' },
-  { symbol: 'USDCHF', name: 'USD / CHF', exchange: 'FOREX', country: 'GLOBAL', currency: 'CHF', assetType: 'FOREX', providerSymbol: 'USD/CHF', provider: 'twelvedata', timezone: 'UTC', sector: 'Currencies', marketStatus: 'LIVE' },
-  { symbol: 'AUDUSD', name: 'AUD / USD', exchange: 'FOREX', country: 'GLOBAL', currency: 'USD', assetType: 'FOREX', providerSymbol: 'AUD/USD', provider: 'twelvedata', timezone: 'UTC', sector: 'Currencies', marketStatus: 'LIVE' },
-  { symbol: 'USDCAD', name: 'USD / CAD', exchange: 'FOREX', country: 'GLOBAL', currency: 'CAD', assetType: 'FOREX', providerSymbol: 'USD/CAD', provider: 'twelvedata', timezone: 'UTC', sector: 'Currencies', marketStatus: 'LIVE' },
-  { symbol: 'NZDUSD', name: 'NZD / USD', exchange: 'FOREX', country: 'GLOBAL', currency: 'USD', assetType: 'FOREX', providerSymbol: 'NZD/USD', provider: 'twelvedata', timezone: 'UTC', sector: 'Currencies', marketStatus: 'LIVE' },
-  { symbol: 'USDINR', name: 'USD / INR', exchange: 'FOREX', country: 'GLOBAL', currency: 'INR', assetType: 'FOREX', providerSymbol: 'USD/INR', provider: 'twelvedata', timezone: 'UTC', sector: 'Currencies', marketStatus: 'LIVE' },
 ];
-
 
 export class InstrumentService {
   private instruments: Map<string, Instrument> = new Map();

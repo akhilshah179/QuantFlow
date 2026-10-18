@@ -1,7 +1,7 @@
 import { Request, Response, NextFunction } from 'express';
-import { binanceCryptoDataProvider } from '../providers/BinanceCryptoDataProvider';
+import { CryptoDataProvider } from '../providers/CryptoDataProvider';
 
-const cryptoProvider = binanceCryptoDataProvider;
+const cryptoProvider = new CryptoDataProvider();
 
 export async function getCryptoOverview(req: Request, res: Response, next: NextFunction) {
   try {

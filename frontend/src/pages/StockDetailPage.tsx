@@ -1,7 +1,6 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect } from 'react';
 import { useParams } from 'react-router-dom';
-import api from '../services/api';
-import { StockQuote, Candle } from '../types/stock';
+import { ShieldAlert } from 'lucide-react';
 import { StockHeader } from '../components/stock/StockHeader';
 import { TimeframeBar } from '../components/stock/TimeframeBar';
 import { IndicatorSelector } from '../components/stock/IndicatorSelector';
@@ -10,159 +9,117 @@ import { QuickTradePanel } from '../components/trading/QuickTradePanel';
 import { NewsSection } from '../components/news/NewsSection';
 import { useChartStore } from '../store/chartStore';
 import { useRealtimeQuote } from '../hooks/useRealtimeQuote';
-import { ShieldAlert } from 'lucide-react';
+import { useStockHistory, useStockQuote } from '../services/queries';
+import { Panel } from '../components/ui/Panel';
+import { Button } from '../components/ui/Button';
+import { EmptyState, Skeleton } from '../components/ui/misc';
+
+const EMPTY: never[] = [];
 
 export const StockDetailPage: React.FC = () => {
   const { symbol = 'AAPL' } = useParams<{ symbol: string }>();
   const upperSymbol = symbol.toUpperCase();
 
-  const [resolvedSymbol, setResolvedSymbol] = useState<any>(null);
-  const [quote, setQuote] = useState<StockQuote | null>(null);
-  const [candles, setCandles] = useState<Candle[]>([]);
-  const [indicatorData, setIndicatorData] = useState<any>(null);
-  const [loading, setLoading] = useState<boolean>(true);
-  const [error, setError] = useState<string | null>(null);
+  const timeframe = useChartStore((s) => s.timeframe);
+  const chartType = useChartStore((s) => s.chartType);
+  const activeIndicators = useChartStore((s) => s.activeIndicators);
+  const setActiveSymbol = useChartStore((s) => s.setActiveSymbol);
+  const setTimeframe = useChartStore((s) => s.setTimeframe);
+  const setChartType = useChartStore((s) => s.setChartType);
+  const toggleIndicator = useChartStore((s) => s.toggleIndicator);
 
-  const {
-    timeframe,
-    chartType,
-    activeIndicators,
-    setActiveSymbol,
-    setTimeframe,
-    setChartType,
-    toggleIndicator,
-  } = useChartStore();
-
-  const activeProviderSymbol = resolvedSymbol?.providerSymbol || upperSymbol;
-  const realtimeTick = useRealtimeQuote(activeProviderSymbol);
+  const realtimeTick = useRealtimeQuote(upperSymbol);
+  const quoteQuery = useStockQuote(upperSymbol);
+  const historyQuery = useStockHistory(upperSymbol, timeframe);
 
   useEffect(() => {
-    setActiveSymbol(activeProviderSymbol);
-  }, [activeProviderSymbol, setActiveSymbol]);
+    setActiveSymbol(upperSymbol);
+  }, [upperSymbol, setActiveSymbol]);
 
-  const fetchStockData = async () => {
-    setLoading(true);
-    setError(null);
-
-    try {
-      // 1. Resolve symbol
-      const resolveRes: any = await api.get(`/stocks/${upperSymbol}/resolve`);
-      const resolved = resolveRes?.data || resolveRes;
-      setResolvedSymbol(resolved);
-
-      if (resolved && resolved.supported === false) {
-        setError(resolved.unsupportedReason || `Market data unavailable for this exchange/provider (${resolved.exchange || upperSymbol}).`);
-        setLoading(false);
-        return;
-      }
-
-      const targetSym = resolved?.providerSymbol || upperSymbol;
-
-      // 2. Fetch Quote & History using providerSymbol
-      const [quoteRes, historyRes]: [any, any] = await Promise.all([
-        api.get(`/stocks/${targetSym}`),
-        api.get(`/stocks/${targetSym}/history?timeframe=${timeframe}`),
-      ]);
-
-      const quoteObj = quoteRes?.price !== undefined ? quoteRes : (quoteRes?.data || null);
-      const historyObj = historyRes?.candles ? historyRes : (historyRes?.data || {});
-
-      if (!quoteObj) {
-        setError(`Market data unavailable for this exchange/provider (${resolved?.exchange || upperSymbol}).`);
-      } else {
-        setQuote({
-          ...quoteObj,
-          symbol: resolved?.symbol || quoteObj.symbol,
-          name: resolved?.companyName || quoteObj.name,
-        });
-      }
-
-      setCandles(historyObj?.candles || []);
-      setIndicatorData(historyObj?.indicators || {});
-      setLoading(false);
-    } catch (err: any) {
-      setError(err?.message || `Market data unavailable for this exchange/provider.`);
-      setLoading(false);
-    }
+  const fetchStockData = () => {
+    quoteQuery.refetch();
+    historyQuery.refetch();
   };
 
-  useEffect(() => {
-    fetchStockData();
-  }, [upperSymbol, timeframe]);
+  const quote = quoteQuery.data;
 
-  if (loading) {
+  if (quoteQuery.isLoading) {
     return (
-      <div className="p-8 text-center text-[#707a8a] font-mono animate-pulse">
-        Resolving symbol and fetching real market data for {upperSymbol}...
+      <div className="space-y-3">
+        <Skeleton className="h-[148px] w-full rounded-lg" />
+        <div className="grid grid-cols-1 gap-3 lg:grid-cols-4">
+          <Skeleton className="h-[560px] rounded-lg lg:col-span-3" />
+          <Skeleton className="h-[560px] rounded-lg" />
+        </div>
       </div>
     );
   }
 
-  if (error || !quote) {
+  if (quoteQuery.isError || !quote) {
     return (
-      <div className="p-8 text-center space-y-4 bg-white border border-[#e0e3eb] rounded-lg text-[#131722]">
-        <div className="text-[#f23645] font-mono text-xs flex items-center justify-center space-x-2 font-bold">
-          <ShieldAlert className="w-5 h-5 shrink-0" />
-          <span>{error || `Market data unavailable for this exchange/provider.`}</span>
-        </div>
-        <p className="text-xs font-mono text-[#707a8a]">
-          The symbol '{upperSymbol}' was located, but real-time stream and kline candles are not served by active exchange data feeds.
-        </p>
-        <button
-          onClick={fetchStockData}
-          className="bg-[#2962ff] hover:bg-[#1e54e4] text-white px-4 py-1.5 rounded text-xs font-mono font-bold transition-colors cursor-pointer"
-        >
-          Retry Provider Query
-        </button>
-      </div>
+      <Panel>
+        <EmptyState
+          icon={ShieldAlert}
+          tone="down"
+          title={(quoteQuery.error as Error)?.message || `Stock symbol ${upperSymbol} not found or market data unavailable.`}
+          action={
+            <Button variant="primary" onClick={fetchStockData} loading={quoteQuery.isFetching}>
+              Retry Connection
+            </Button>
+          }
+        />
+      </Panel>
     );
   }
 
   const currentPrice = realtimeTick ? realtimeTick.price : quote.price;
+  const candles = historyQuery.data?.candles ?? EMPTY;
+  // Placeholder candles belong to the previous symbol/timeframe — don't apply new ticks to them.
+  const chartTick = historyQuery.isPlaceholderData ? null : realtimeTick;
 
   return (
-    <div className="space-y-3 text-[#131722]">
-      {/* Header Market Statistics Terminal */}
-      <StockHeader quote={quote} realtimeTick={realtimeTick} />
+    <div className="space-y-3">
+      <div className={quoteQuery.isPlaceholderData ? 'pointer-events-none opacity-50 transition-opacity' : 'transition-opacity'}>
+        <StockHeader quote={quote} realtimeTick={quoteQuery.isPlaceholderData ? null : realtimeTick} />
+      </div>
 
-      {/* Main Workspace Grid: Technical Chart + Order Book / Trade Panel */}
-      <div className="grid grid-cols-1 lg:grid-cols-4 gap-3">
-        {/* Technical Chart Workspace (3 cols) */}
-        <div className="lg:col-span-3 flex flex-col space-y-2">
-          <TimeframeBar
-            activeTimeframe={timeframe}
-            onTimeframeChange={setTimeframe}
-            activeChartType={chartType}
-            onChartTypeChange={setChartType}
-          />
+      <div className="grid grid-cols-1 gap-3 lg:grid-cols-4">
+        {/* Technical chart workspace */}
+        <div className="flex flex-col gap-2 lg:col-span-3">
+          <div className="qf-panel flex flex-col gap-2 px-3 py-2">
+            <TimeframeBar
+              activeTimeframe={timeframe}
+              onTimeframeChange={setTimeframe}
+              activeChartType={chartType}
+              onChartTypeChange={setChartType}
+            />
+            <div className="h-px bg-line" />
+            <IndicatorSelector activeIndicators={activeIndicators} onToggleIndicator={toggleIndicator} />
+          </div>
 
-          <IndicatorSelector
-            activeIndicators={activeIndicators}
-            onToggleIndicator={toggleIndicator}
-          />
-
-          <div className="h-[540px]">
+          <div className="h-[460px] sm:h-[560px]">
             <FinancialChart
+              symbol={upperSymbol}
               candles={candles}
               chartType={chartType}
               indicators={activeIndicators}
               timeframe={timeframe}
-              realtimeTick={realtimeTick}
-              indicatorData={indicatorData}
+              realtimeTick={chartTick}
+              indicatorData={historyQuery.data?.indicators}
+              loading={historyQuery.isFetching}
             />
           </div>
         </div>
 
-        {/* Paper Order Entry Terminal Column (1 col) */}
+        {/* Paper order entry */}
         <div className="lg:col-span-1">
-          <QuickTradePanel symbol={upperSymbol} currentPrice={currentPrice} />
+          <div className="lg:sticky lg:top-0">
+            <QuickTradePanel symbol={upperSymbol} currentPrice={currentPrice} />
+          </div>
         </div>
       </div>
 
-      {/* Symbol Intelligence & News */}
-      <div className="pt-2">
-        <NewsSection symbol={upperSymbol} limit={6} />
-      </div>
+      <NewsSection symbol={upperSymbol} limit={6} />
     </div>
   );
 };

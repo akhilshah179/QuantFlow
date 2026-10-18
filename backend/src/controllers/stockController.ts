@@ -11,26 +11,12 @@ export async function searchStocks(req: Request, res: Response, next: NextFuncti
   }
 }
 
-export async function resolveSymbol(req: Request, res: Response, next: NextFunction) {
-  try {
-    const { symbol } = req.params;
-    const resolved = stockService.resolveSymbol(symbol);
-    res.status(200).json({ success: true, data: resolved });
-  } catch (err) {
-    next(err);
-  }
-}
-
 export async function getStockDetails(req: Request, res: Response, next: NextFunction) {
   try {
     const { symbol } = req.params;
     const quote = await stockService.getStockQuote(symbol);
     res.status(200).json({ success: true, data: quote });
-  } catch (err: any) {
-    if (err.statusCode) {
-      res.status(err.statusCode).json({ success: false, error: err.message });
-      return;
-    }
+  } catch (err) {
     next(err);
   }
 }
@@ -42,11 +28,7 @@ export async function getStockHistory(req: Request, res: Response, next: NextFun
     const limit = req.query.limit ? parseInt(req.query.limit as string, 10) : 300;
     const data = await stockService.getHistoricalData(symbol, timeframe, limit);
     res.status(200).json({ success: true, data });
-  } catch (err: any) {
-    if (err.statusCode) {
-      res.status(err.statusCode).json({ success: false, error: err.message });
-      return;
-    }
+  } catch (err) {
     next(err);
   }
 }

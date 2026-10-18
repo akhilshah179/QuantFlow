@@ -4,7 +4,6 @@ import { config } from './config';
 import redisManager from './redis/client';
 import { wsServer } from './websocket/server';
 import { marketIngestionService } from './services/marketIngestionService';
-import { upstoxInstrumentService } from './services/upstoxInstrumentService';
 
 const server = http.createServer(app);
 
@@ -15,9 +14,6 @@ async function startServer() {
 
     // Attach WebSocket server
     wsServer.initialize(server);
-
-    // Initialize Upstox NSE Instrument Master Data
-    await upstoxInstrumentService.init();
 
     // Initialize Real Market Data Ingestion Engine
     marketIngestionService.initialize();

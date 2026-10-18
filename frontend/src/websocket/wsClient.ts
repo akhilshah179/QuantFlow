@@ -19,7 +19,8 @@ export class QuantFlowWebSocketClient {
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
     const isDev = window.location.port === '5173' || window.location.hostname === 'localhost';
     const host = isDev ? '127.0.0.1:5000' : window.location.host;
-    this.url = `${protocol}//${host}/ws`;
+    // Optional override, e.g. when macOS AirPlay Receiver occupies port 5000.
+    this.url = import.meta.env.VITE_WS_URL || `${protocol}//${host}/ws`;
   }
 
   public connect(): void {
@@ -63,17 +64,10 @@ export class QuantFlowWebSocketClient {
               change: data.change,
               changePercent: data.changePercent,
               volume: data.volume,
-              bid: data.bid,
-              ask: data.ask,
-              source: data.source,
-              spreadPips: data.spreadPips,
               timestamp: data.timestamp,
-              candle: data.candle,
-              isClosed: data.isClosed,
             };
             this.tickCallbacks.forEach((cb) => cb(tick));
           }
-
         } catch {
           // Ignore non-JSON
         }

@@ -1,28 +1,33 @@
 import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { AnimatePresence, motion } from 'motion/react';
 import { useWatchlistStore } from '../store/watchlistStore';
-import { useMarketStore } from '../store/marketStore';
-import { formatCurrency, formatPercent } from '../utils/formatters';
-import { Bookmark, Plus, Trash2, ExternalLink, TrendingUp, TrendingDown, ShieldAlert } from 'lucide-react';
+import { notify } from '../store/notificationStore';
+import { formatCurrency, formatSigned, formatSignedPercent } from '../utils/formatters';
+import { Star, Plus, Trash2, ExternalLink, ShieldAlert, X } from 'lucide-react';
+import { PageHeader } from '../components/ui/PageHeader';
+import { Panel } from '../components/ui/Panel';
+import { Button } from '../components/ui/Button';
+import { LiveValue } from '../components/ui/LiveValue';
+import { EmptyState, SkeletonRows } from '../components/ui/misc';
+import { cn } from '../utils/cn';
 
 export const WatchlistPage: React.FC = () => {
   const navigate = useNavigate();
-  const {
-    watchlists,
-    activeWatchlistId,
-    fetchWatchlists,
-    createWatchlist,
-    addStock,
-    removeStock,
-    setActiveWatchlist,
-  } = useWatchlistStore();
-
-  const quotes = useMarketStore((state) => state.quotes);
+  const watchlists = useWatchlistStore((s) => s.watchlists);
+  const activeWatchlistId = useWatchlistStore((s) => s.activeWatchlistId);
+  const isLoading = useWatchlistStore((s) => s.isLoading);
+  const fetchWatchlists = useWatchlistStore((s) => s.fetchWatchlists);
+  const createWatchlist = useWatchlistStore((s) => s.createWatchlist);
+  const addStock = useWatchlistStore((s) => s.addStock);
+  const removeStock = useWatchlistStore((s) => s.removeStock);
+  const setActiveWatchlist = useWatchlistStore((s) => s.setActiveWatchlist);
 
   const [newSymbol, setNewSymbol] = useState('');
   const [newWlName, setNewWlName] = useState('');
   const [showAddWl, setShowAddWl] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const [adding, setAdding] = useState(false);
 
   useEffect(() => {
     fetchWatchlists();
@@ -34,11 +39,16 @@ export const WatchlistPage: React.FC = () => {
     e.preventDefault();
     if (!newSymbol.trim() || !activeWatchlist) return;
     setErrorMsg(null);
+    setAdding(true);
+    const symbol = newSymbol.trim().toUpperCase();
     try {
       await addStock(activeWatchlist.id, newSymbol.trim());
       setNewSymbol('');
+      notify({ tone: 'success', title: `${symbol} added to ${activeWatchlist.name}` });
     } catch (err: any) {
       setErrorMsg(err.message);
+    } finally {
+      setAdding(false);
     }
   };
 
@@ -47,6 +57,7 @@ export const WatchlistPage: React.FC = () => {
     if (!newWlName.trim()) return;
     try {
       await createWatchlist(newWlName.trim());
+      notify({ tone: 'success', title: `Watchlist "${newWlName.trim()}" created` });
       setNewWlName('');
       setShowAddWl(false);
     } catch (err: any) {
@@ -54,153 +65,201 @@ export const WatchlistPage: React.FC = () => {
     }
   };
 
+  const handleRemove = (symbol: string) => {
+    if (!activeWatchlist) return;
+    removeStock(activeWatchlist.id, symbol)
+      .then(() => notify({ tone: 'info', title: `${symbol} removed`, message: activeWatchlist.name }))
+      .catch((err: any) => setErrorMsg(err.message));
+  };
+
   return (
-    <div className="space-y-4 text-[#131722]">
-      {/* Title Header & Actions */}
-      <div className="bg-white border border-[#e0e3eb] rounded-lg p-4 shadow-xs flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-        <div>
-          <h1 className="text-lg font-bold font-mono text-[#131722] flex items-center space-x-2">
-            <Bookmark className="w-5 h-5 text-[#2962ff]" />
-            <span>Custom Market Watchlists</span>
-          </h1>
-          <p className="text-xs text-[#707a8a] mt-0.5 font-medium">Monitor real-time prices across your custom portfolio watchlists</p>
-        </div>
+    <div className="space-y-4">
+      <PageHeader
+        icon={Star}
+        eyebrow="Trading / Watchlists"
+        title="Custom Market Watchlists"
+        subtitle="Monitor real-time prices across your custom watchlists"
+        actions={
+          <Button variant="primary" onClick={() => setShowAddWl(!showAddWl)}>
+            <Plus className={cn('h-3.5 w-3.5 transition-transform duration-200', showAddWl && 'rotate-45')} />
+            New Watchlist
+          </Button>
+        }
+      />
 
-        <button
-          onClick={() => setShowAddWl(!showAddWl)}
-          className="flex items-center space-x-1.5 bg-[#2962ff] hover:bg-[#1e54e4] text-white font-mono text-xs font-bold px-3 py-1.5 rounded transition-colors shadow-xs"
-        >
-          <Plus className="w-4 h-4" />
-          <span>New Watchlist</span>
-        </button>
-      </div>
-
-      {/* New Watchlist Inline Input Form */}
-      {showAddWl && (
-        <form onSubmit={handleCreateWatchlist} className="bg-white border border-[#e0e3eb] p-3.5 rounded-lg flex items-center space-x-3 shadow-xs">
-          <input
-            type="text"
-            placeholder="Watchlist Name (e.g. EV & Semiconductors)..."
-            value={newWlName}
-            onChange={(e) => setNewWlName(e.target.value)}
-            className="flex-1 bg-[#f8f9fd] border border-[#e0e3eb] rounded px-3 py-1.5 text-xs text-[#131722] font-mono focus:outline-none focus:border-[#2962ff]"
-          />
-          <button type="submit" className="bg-[#089981] text-white px-4 py-1.5 text-xs font-mono font-bold rounded hover:bg-[#066d5c]">
-            Create
-          </button>
-        </form>
-      )}
-
-      {/* Watchlist Selection Tab Strip */}
-      <div className="flex items-center space-x-2 border-b border-[#e0e3eb] pb-2 overflow-x-auto">
-        {watchlists.map((wl) => (
-          <button
-            key={wl.id}
-            onClick={() => setActiveWatchlist(wl.id)}
-            className={`px-3 py-1.5 rounded font-mono text-xs font-bold transition-colors ${
-              activeWatchlistId === wl.id
-                ? 'bg-[#2962ff] text-white shadow-xs'
-                : 'text-[#707a8a] hover:text-[#131722] hover:bg-[#f0f3fa] bg-white border border-[#e0e3eb]'
-            }`}
+      <AnimatePresence initial={false}>
+        {showAddWl && (
+          <motion.form
+            onSubmit={handleCreateWatchlist}
+            initial={{ opacity: 0, height: 0 }}
+            animate={{ opacity: 1, height: 'auto' }}
+            exit={{ opacity: 0, height: 0 }}
+            transition={{ duration: 0.2, ease: [0.2, 0.8, 0.2, 1] }}
+            className="overflow-hidden"
           >
-            {wl.name} ({wl.items.length})
-          </button>
-        ))}
-      </div>
-
-      {activeWatchlist ? (
-        <div className="bg-white border border-[#e0e3eb] rounded-lg p-3.5 space-y-3.5 shadow-xs">
-          {/* Add Symbol Input */}
-          <form onSubmit={handleAddStock} className="flex items-center space-x-3">
-            <div className="relative flex-1 max-w-xs">
+            <div className="qf-panel flex items-center gap-2 p-3">
               <input
                 type="text"
-                placeholder="Add ticker symbol (e.g. NVDA)..."
+                placeholder="Watchlist name (e.g. EV & Semiconductors)…"
+                value={newWlName}
+                onChange={(e) => setNewWlName(e.target.value)}
+                className="qf-input"
+                autoFocus
+              />
+              <Button type="submit" variant="buy" size="md">
+                Create
+              </Button>
+            </div>
+          </motion.form>
+        )}
+      </AnimatePresence>
+
+      {/* Tabs */}
+      <div className="flex items-center gap-1 overflow-x-auto border-b border-line scrollbar-none">
+        {watchlists.map((wl) => {
+          const active = (activeWatchlist?.id ?? activeWatchlistId) === wl.id;
+          return (
+            <button
+              key={wl.id}
+              onClick={() => setActiveWatchlist(wl.id)}
+              className={cn(
+                'relative shrink-0 px-3 py-2 font-mono text-xs font-semibold transition-colors duration-150',
+                active ? 'text-fg' : 'text-fg-subtle hover:text-fg-muted',
+              )}
+            >
+              {wl.name}
+              <span className="num ml-1.5 rounded bg-raised px-1 text-3xs text-fg-subtle">{wl.items.length}</span>
+              {active && (
+                <motion.span
+                  layoutId="wl-tab"
+                  className="absolute inset-x-2 -bottom-px h-0.5 rounded-full bg-accent shadow-[0_0_8px_rgb(var(--qf-accent)/0.8)]"
+                  transition={{ type: 'spring', stiffness: 500, damping: 40 }}
+                />
+              )}
+            </button>
+          );
+        })}
+      </div>
+
+      {isLoading && watchlists.length === 0 ? (
+        <Panel>
+          <SkeletonRows rows={6} />
+        </Panel>
+      ) : activeWatchlist ? (
+        <Panel
+          bodyClassName="p-0"
+          title={activeWatchlist.name}
+          icon={Star}
+          actions={
+            <form onSubmit={handleAddStock} className="flex items-center gap-1.5">
+              <input
+                type="text"
+                placeholder="Add ticker (e.g. NVDA)"
                 value={newSymbol}
                 onChange={(e) => setNewSymbol(e.target.value)}
-                className="w-full bg-[#f8f9fd] border border-[#e0e3eb] rounded px-3 py-1.5 text-xs font-mono text-[#131722] placeholder-[#9598a1] focus:outline-none focus:border-[#2962ff]"
+                className="qf-input h-7 w-36 py-0 uppercase sm:w-48"
               />
-            </div>
-            <button
-              type="submit"
-              className="bg-[#2962ff] hover:bg-[#1e54e4] text-white font-mono text-xs font-bold px-3.5 py-1.5 rounded transition-colors"
-            >
-              Add Symbol
-            </button>
-          </form>
+              <Button type="submit" variant="primary" size="sm" loading={adding}>
+                Add
+              </Button>
+            </form>
+          }
+        >
+          <AnimatePresence>
+            {errorMsg && (
+              <motion.div
+                initial={{ opacity: 0, height: 0 }}
+                animate={{ opacity: 1, height: 'auto' }}
+                exit={{ opacity: 0, height: 0 }}
+                className="overflow-hidden"
+              >
+                <div className="flex items-center justify-between gap-2 border-b border-down/20 bg-down/10 px-3.5 py-2 font-mono text-xs text-down">
+                  <span className="flex items-center gap-1.5">
+                    <ShieldAlert className="h-3.5 w-3.5" />
+                    {errorMsg}
+                  </span>
+                  <button onClick={() => setErrorMsg(null)} aria-label="Dismiss error">
+                    <X className="h-3.5 w-3.5" />
+                  </button>
+                </div>
+              </motion.div>
+            )}
+          </AnimatePresence>
 
-          {errorMsg && (
-            <div className="text-xs text-[#f23645] font-mono flex items-center space-x-1 font-semibold">
-              <ShieldAlert className="w-3.5 h-3.5" />
-              <span>{errorMsg}</span>
+          {activeWatchlist.items.length === 0 ? (
+            <EmptyState icon={Star} title="No symbols in this watchlist yet." hint="Add a ticker above to start streaming it." className="m-3.5" />
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="qf-table">
+                <thead>
+                  <tr>
+                    <th>Symbol</th>
+                    <th>Company Name</th>
+                    <th className="text-right">Live Price</th>
+                    <th className="text-right">Change</th>
+                    <th className="text-right">Change %</th>
+                    <th className="text-right">Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <AnimatePresence initial={false}>
+                    {activeWatchlist.items.map((item) => {
+                      const currency =
+                        item.symbol.includes(':NSE') || item.symbol.includes('RELIANCE') || item.symbol.includes('TCS') || item.symbol.includes('INFY')
+                          ? 'INR'
+                          : 'USD';
+                      return (
+                        <motion.tr
+                          key={item.id}
+                          layout="position"
+                          initial={{ opacity: 0, x: -8 }}
+                          animate={{ opacity: 1, x: 0 }}
+                          exit={{ opacity: 0, x: 8 }}
+                          transition={{ duration: 0.2 }}
+                          className="group"
+                        >
+                          <td className="font-semibold text-fg">{item.symbol}</td>
+                          <td className="max-w-xs truncate font-sans text-fg-subtle">{item.name}</td>
+                          <td className="text-right">
+                            <LiveValue symbol={item.symbol} value={item.price} format={(v) => formatCurrency(v, currency)} className="font-semibold text-fg" />
+                          </td>
+                          <td className="text-right">
+                            <LiveValue symbol={item.symbol} field="change" value={item.change} format={(v) => formatSigned(v)} signed />
+                          </td>
+                          <td className="text-right">
+                            <LiveValue symbol={item.symbol} field="changePercent" value={item.changePercent} format={formatSignedPercent} pill className="text-[11px] font-semibold" />
+                          </td>
+                          <td className="text-right">
+                            <div className="inline-flex items-center gap-1 opacity-60 transition-opacity group-hover:opacity-100">
+                              <button
+                                onClick={() => navigate(`/stocks/${item.symbol}`)}
+                                className="rounded p-1.5 text-fg-muted transition-colors hover:bg-accent/10 hover:text-accent"
+                                title="Open Analysis Chart"
+                              >
+                                <ExternalLink className="h-3.5 w-3.5" />
+                              </button>
+                              <button
+                                onClick={() => handleRemove(item.symbol)}
+                                className="rounded p-1.5 text-fg-muted transition-colors hover:bg-down/10 hover:text-down"
+                                title="Remove from Watchlist"
+                              >
+                                <Trash2 className="h-3.5 w-3.5" />
+                              </button>
+                            </div>
+                          </td>
+                        </motion.tr>
+                      );
+                    })}
+                  </AnimatePresence>
+                </tbody>
+              </table>
             </div>
           )}
-
-          {/* Table */}
-          <div className="overflow-x-auto">
-            <table className="w-full text-left text-xs font-mono">
-              <thead>
-                <tr className="text-[#707a8a] border-b border-[#e0e3eb] uppercase text-[10px]">
-                  <th className="pb-2">Symbol</th>
-                  <th className="pb-2">Company Name</th>
-                  <th className="pb-2">Live Price</th>
-                  <th className="pb-2">Change</th>
-                  <th className="pb-2">Change %</th>
-                  <th className="pb-2 text-right">Actions</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-[#f0f3fa]">
-                {activeWatchlist.items.map((item) => {
-                  const liveTick = quotes[item.symbol];
-                  const price = liveTick ? liveTick.price : item.price;
-                  const change = liveTick ? liveTick.change : item.change;
-                  const changePercent = liveTick ? liveTick.changePercent : item.changePercent;
-                  const isUp = change >= 0;
-                  const currency = item.symbol.includes(':NSE') || item.symbol.includes('RELIANCE') || item.symbol.includes('TCS') || item.symbol.includes('INFY') ? 'INR' : 'USD';
-
-                  return (
-                    <tr key={item.id} className="hover:bg-[#f8f9fd] transition-colors">
-                      <td className="py-2.5 font-bold text-[#131722] text-xs">{item.symbol}</td>
-                      <td className="py-2.5 text-[#707a8a] max-w-xs truncate font-medium">{item.name}</td>
-                      <td className="py-2.5 text-[#131722] font-bold text-xs">{formatCurrency(price, currency)}</td>
-                      <td className={`py-2.5 font-bold ${isUp ? 'text-[#089981]' : 'text-[#f23645]'}`}>
-                        {isUp ? '+' : ''}{change.toFixed(2)}
-                      </td>
-                      <td className="py-2.5">
-                        <span
-                          className={`inline-flex items-center space-x-0.5 px-1.5 py-0.5 rounded font-bold text-[11px] ${
-                            isUp ? 'bg-[#e6f4f1] text-[#089981]' : 'bg-[#fdecee] text-[#f23645]'
-                          }`}
-                        >
-                          {isUp ? <TrendingUp className="w-3 h-3" /> : <TrendingDown className="w-3 h-3" />}
-                          <span>{formatPercent(changePercent)}</span>
-                        </span>
-                      </td>
-                      <td className="py-2.5 text-right space-x-1.5">
-                        <button
-                          onClick={() => navigate(`/stocks/${item.symbol}`)}
-                          className="p-1 hover:bg-[#e8f0fe] text-[#2962ff] rounded transition-colors"
-                          title="Open Analysis Chart"
-                        >
-                          <ExternalLink className="w-3.5 h-3.5" />
-                        </button>
-                        <button
-                          onClick={() => removeStock(activeWatchlist.id, item.symbol)}
-                          className="p-1 hover:bg-[#fdecee] text-[#f23645] rounded transition-colors"
-                          title="Remove from Watchlist"
-                        >
-                          <Trash2 className="w-3.5 h-3.5" />
-                        </button>
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-        </div>
+        </Panel>
       ) : (
-        <div className="p-8 text-center text-[#707a8a] font-mono bg-white border border-[#e0e3eb] rounded-lg">No watchlists found.</div>
+        <Panel>
+          <EmptyState icon={Star} title="No watchlists found." hint="Create one to start tracking symbols." />
+        </Panel>
       )}
     </div>
   );

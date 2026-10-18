@@ -1,70 +1,79 @@
-import React, { useEffect, useState } from 'react';
-import api from '../services/api';
-import { Award } from 'lucide-react';
+import React from 'react';
+import { motion } from 'motion/react';
+import { CalendarClock, Rocket } from 'lucide-react';
+import { useIpoCalendar } from '../services/queries';
+import { PageHeader } from '../components/ui/PageHeader';
+import { EmptyState, Skeleton } from '../components/ui/misc';
+import { cn } from '../utils/cn';
+
+const STATUS_STYLE: Record<string, string> = {
+  UPCOMING: 'bg-info/10 text-info ring-info/25',
+  LISTED: 'bg-up/10 text-up ring-up/25',
+};
 
 export const IPOCalendarPage: React.FC = () => {
-  const [listings, setListings] = useState<any[]>([]);
-
-  useEffect(() => {
-    api
-      .get('/calendar/ipo')
-      .then((res: any) => {
-        const list = Array.isArray(res) ? res : res?.data || [];
-        setListings(list);
-      })
-      .catch(() => setListings([]));
-  }, []);
+  const { data: listings = [], isLoading } = useIpoCalendar();
 
   return (
-    <div className="space-y-4 text-[#131722]">
-      {/* Header Banner */}
-      <div className="flex items-center justify-between bg-white border border-[#e0e3eb] rounded-lg p-4 shadow-xs">
-        <div className="flex items-center space-x-3">
-          <div className="w-9 h-9 rounded bg-[#e8f0fe] text-[#2962ff] flex items-center justify-center font-bold">
-            <Award className="w-5 h-5" />
-          </div>
-          <div>
-            <h1 className="text-lg font-bold font-mono text-[#131722]">Upcoming & Recent IPO Calendar</h1>
-            <p className="text-xs font-mono text-[#707a8a] font-medium">Initial Public Offerings, listing dates, and offer price ranges</p>
-          </div>
+    <div className="space-y-4">
+      <PageHeader
+        icon={Rocket}
+        eyebrow="Research / IPO Calendar"
+        title="Upcoming & Recent IPO Calendar"
+        subtitle="Initial public offerings, listing dates, and offer price ranges"
+      />
+
+      {isLoading ? (
+        <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
+          {Array.from({ length: 6 }).map((_, i) => (
+            <Skeleton key={i} className="h-36" />
+          ))}
         </div>
-      </div>
+      ) : listings.length === 0 ? (
+        <EmptyState icon={Rocket} title="No IPO listings available." />
+      ) : (
+        <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
+          {listings.map((ipo, i) => (
+            <motion.div
+              key={ipo.id}
+              initial={{ opacity: 0, y: 8 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: Math.min(i, 9) * 0.04, duration: 0.22 }}
+              className="qf-panel group space-y-3 p-4 transition-[border-color,transform] duration-200 hover:-translate-y-0.5 hover:border-line-strong"
+            >
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <div className="truncate text-sm font-semibold text-fg">{ipo.company}</div>
+                  <div className="mt-0.5 font-mono text-2xs font-semibold text-accent">
+                    {ipo.symbol} <span className="text-fg-subtle">· {ipo.exchange}</span>
+                  </div>
+                </div>
+                <span
+                  className={cn(
+                    'shrink-0 rounded px-1.5 py-0.5 font-mono text-3xs font-bold ring-1 ring-inset',
+                    STATUS_STYLE[ipo.status] ?? 'bg-accent/10 text-accent ring-accent/25',
+                  )}
+                >
+                  {ipo.status}
+                </span>
+              </div>
 
-      {/* Cards Grid */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
-        {listings.map((ipo) => (
-          <div key={ipo.id} className="bg-white border border-[#e0e3eb] rounded-lg p-4 space-y-3 font-mono shadow-xs hover:border-[#2962ff] transition-colors">
-            <div className="flex items-start justify-between">
-              <div>
-                <div className="text-xs font-bold text-[#131722]">{ipo.company}</div>
-                <div className="text-[11px] text-[#2962ff] font-bold mt-0.5">{ipo.symbol} • {ipo.exchange}</div>
+              <div className="grid grid-cols-2 gap-px overflow-hidden rounded-md border border-line bg-line font-mono text-xs">
+                <div className="bg-surface px-2.5 py-2">
+                  <div className="flex items-center gap-1 text-3xs uppercase tracking-wider text-fg-subtle">
+                    <CalendarClock className="h-3 w-3" /> Listing
+                  </div>
+                  <div className="mt-0.5 font-semibold text-fg">{ipo.listingDate}</div>
+                </div>
+                <div className="bg-surface px-2.5 py-2">
+                  <div className="text-3xs uppercase tracking-wider text-fg-subtle">Price range</div>
+                  <div className="num mt-0.5 font-semibold text-up">{ipo.priceRange}</div>
+                </div>
               </div>
-              <span
-                className={`text-[10px] font-bold px-2 py-0.5 rounded ${
-                  ipo.status === 'UPCOMING'
-                    ? 'bg-[#e8f0fe] text-[#2962ff]'
-                    : ipo.status === 'LISTED'
-                    ? 'bg-[#e6f4f1] text-[#089981]'
-                    : 'bg-[#fff3e0] text-[#e65100]'
-                }`}
-              >
-                {ipo.status}
-              </span>
-            </div>
-
-            <div className="space-y-1.5 pt-2 border-t border-[#f0f3fa] text-xs">
-              <div className="flex justify-between">
-                <span className="text-[#707a8a]">Listing Date</span>
-                <span className="text-[#131722] font-bold">{ipo.listingDate}</span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-[#707a8a]">Price Range</span>
-                <span className="text-[#089981] font-bold">{ipo.priceRange}</span>
-              </div>
-            </div>
-          </div>
-        ))}
-      </div>
+            </motion.div>
+          ))}
+        </div>
+      )}
     </div>
   );
 };

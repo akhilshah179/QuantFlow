@@ -2,47 +2,194 @@
 @tailwind components;
 @tailwind utilities;
 
+/* ----------------------------------------------------------------------------
+ * QuantFlow terminal design tokens (space-separated RGB for alpha support)
+ * ------------------------------------------------------------------------- */
+:root {
+  --qf-bg: 5 7 10;
+  --qf-surface: 10 13 18;
+  --qf-raised: 15 19 26;
+  --qf-overlay: 21 26 35;
+  --qf-line: 28 34 44;
+  --qf-line-strong: 42 50 63;
+
+  --qf-fg: 228 232 239;
+  --qf-fg-muted: 145 155 172;
+  --qf-fg-subtle: 92 102 119;
+
+  --qf-up: 34 197 132;
+  --qf-down: 242 82 98;
+  --qf-accent: 245 177 66;
+  --qf-accent-fg: 20 14 2;
+  --qf-info: 96 165 250;
+
+  color-scheme: dark;
+}
+
 @layer base {
+  html,
+  body,
+  #root {
+    @apply bg-bg text-fg;
+    min-height: 100%;
+  }
+
   body {
-    @apply bg-[#ffffff] text-[#131722] antialiased selection:bg-[#2962ff] selection:text-white;
+    @apply font-sans antialiased;
     font-feature-settings: "cv02", "cv03", "cv04", "cv11";
   }
 
-  /* Custom scrollbar for TradingView light financial UI */
+  ::selection {
+    background: rgb(var(--qf-accent) / 0.35);
+    color: rgb(var(--qf-fg));
+  }
+
+  :focus-visible {
+    outline: 1px solid rgb(var(--qf-accent) / 0.8);
+    outline-offset: 2px;
+  }
+
+  input[type='number']::-webkit-inner-spin-button,
+  input[type='number']::-webkit-outer-spin-button {
+    -webkit-appearance: none;
+    margin: 0;
+  }
+
+  select option {
+    background: rgb(var(--qf-raised));
+    color: rgb(var(--qf-fg));
+  }
+
+  /* Thin terminal scrollbars */
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: rgb(var(--qf-line-strong)) transparent;
+  }
   ::-webkit-scrollbar {
-    width: 5px;
-    height: 5px;
+    width: 6px;
+    height: 6px;
   }
-
   ::-webkit-scrollbar-track {
-    background: #ffffff;
+    background: transparent;
   }
-
   ::-webkit-scrollbar-thumb {
-    background: #e0e3eb;
-    border-radius: 2px;
+    background: rgb(var(--qf-line-strong));
+    border-radius: 3px;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background: rgb(var(--qf-fg-subtle));
+  }
+}
+
+@layer components {
+  /* Base terminal panel */
+  .qf-panel {
+    @apply relative rounded-lg border border-line bg-surface/90 shadow-panel;
   }
 
-  ::-webkit-scrollbar-thumb:hover {
-    background: #b2b5be;
+  .qf-panel-header {
+    @apply flex items-center justify-between gap-3 border-b border-line px-3.5 py-2.5;
+  }
+
+  .qf-label {
+    @apply font-mono text-2xs font-semibold uppercase tracking-[0.14em] text-fg-subtle;
+  }
+
+  .qf-input {
+    @apply w-full rounded-md border border-line bg-bg/60 px-3 py-2 font-mono text-xs text-fg placeholder:text-fg-subtle
+      transition-[border-color,box-shadow] duration-150 focus:border-accent/60 focus:outline-none focus:ring-2 focus:ring-accent/15;
+  }
+
+  .qf-table {
+    @apply w-full text-left font-mono text-xs;
+  }
+  .qf-table thead th {
+    @apply whitespace-nowrap border-b border-line px-3 py-2 text-2xs font-semibold uppercase tracking-[0.12em] text-fg-subtle;
+  }
+  .qf-table tbody td {
+    @apply whitespace-nowrap px-3 py-2.5;
+  }
+  .qf-table tbody tr {
+    @apply border-b border-line/60 transition-colors duration-150 last:border-0 hover:bg-raised/70;
+  }
+
+  .qf-kbd {
+    @apply rounded border border-line-strong bg-raised px-1.5 py-px font-mono text-3xs text-fg-muted;
   }
 }
 
 @layer utilities {
-  .text-glow-green {
-    color: #089981;
+  .num {
+    font-family: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-variant-numeric: tabular-nums slashed-zero;
   }
-  .text-glow-red {
-    color: #f23645;
+
+  /* Fades content at the top and bottom edges of the market streams */
+  .mask-fade-y {
+    -webkit-mask-image: linear-gradient(to bottom, transparent 0, #000 14%, #000 86%, transparent 100%);
+    mask-image: linear-gradient(to bottom, transparent 0, #000 14%, #000 86%, transparent 100%);
   }
-  .bg-glass {
-    background: rgba(255, 255, 255, 0.95);
-    backdrop-filter: blur(8px);
+
+  .mask-fade-x {
+    -webkit-mask-image: linear-gradient(to right, transparent 0, #000 8%, #000 92%, transparent 100%);
+    mask-image: linear-gradient(to right, transparent 0, #000 8%, #000 92%, transparent 100%);
   }
-  .tv-card {
-    @apply bg-white border border-[#e0e3eb] rounded-lg shadow-sm hover:border-[#2962ff]/40 transition-colors;
+
+  .bg-grid {
+    background-image:
+      linear-gradient(rgb(var(--qf-line) / 0.35) 1px, transparent 1px),
+      linear-gradient(90deg, rgb(var(--qf-line) / 0.35) 1px, transparent 1px);
+    background-size: 32px 32px;
   }
-  .tv-table-row {
-    @apply hover:bg-[#f8f9fd] border-b border-[#f0f3fa] transition-colors;
+
+  .scrollbar-none {
+    scrollbar-width: none;
+  }
+  .scrollbar-none::-webkit-scrollbar {
+    display: none;
+  }
+}
+
+/* ----------------------------------------------------------------------------
+ * Live value flashes — the overlay animates opacity only (compositor friendly)
+ * ------------------------------------------------------------------------- */
+@layer components {
+  .qf-live {
+    position: relative;
+    display: inline-block;
+    border-radius: 3px;
+    transition: color 600ms ease-out;
+  }
+  .qf-live > .qf-flash {
+    position: absolute;
+    inset: -1px -4px;
+    border-radius: 3px;
+    opacity: 0;
+    pointer-events: none;
+  }
+  .qf-live.is-tick-up {
+    color: rgb(var(--qf-up));
+    transition-duration: 80ms;
+  }
+  .qf-live.is-tick-down {
+    color: rgb(var(--qf-down));
+    transition-duration: 80ms;
+  }
+}
+
+/* ----------------------------------------------------------------------------
+ * Reduced motion: stop continuous animation, keep state changes legible
+ * ------------------------------------------------------------------------- */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-iteration-count: 1 !important;
+    animation-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+  .animate-live-ping,
+  .animate-shimmer {
+    display: none;
   }
 }

@@ -1,9 +1,12 @@
 import React, { useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
+import { AnimatePresence, motion } from 'motion/react';
 import { useAuthStore } from '../store/authStore';
 import api from '../services/api';
-import { TrendingUp, AlertCircle, LogIn, Lock } from 'lucide-react';
-import { GoogleLoginButton } from '../components/auth/GoogleLoginButton';
+import { AlertCircle, LogIn, Zap } from 'lucide-react';
+import { AuthShell } from '../components/layout/AuthShell';
+import { Button } from '../components/ui/Button';
+import { FieldLabel } from '../components/ui/misc';
 
 export const LoginPage: React.FC = () => {
   const navigate = useNavigate();
@@ -23,12 +26,12 @@ export const LoginPage: React.FC = () => {
       const res: any = await api.post('/auth/login', { email, password });
       const authData = res?.token ? res : (res?.data || res);
       if (!authData || !authData.token) {
-        throw new Error('Invalid email or password');
+        throw new Error('Invalid authentication response from server.');
       }
       login(authData.token, authData.user);
       navigate('/');
     } catch (err: any) {
-      setError(err?.message || 'Invalid email or password');
+      setError(err.message || 'Login failed');
     } finally {
       setLoading(false);
     }
@@ -38,15 +41,15 @@ export const LoginPage: React.FC = () => {
     setError(null);
     setLoading(true);
     try {
-      const res: any = await api.post('/auth/login', {
-        email: 'trader@quantflow.io',
-        password: 'Password123!',
-      });
-      const authData = res?.token ? res : (res?.data || res);
-      login(authData.token, authData.user);
-      navigate('/');
-    } catch {
       try {
+        const res: any = await api.post('/auth/login', {
+          email: 'trader@quantflow.io',
+          password: 'Password123!',
+        });
+        const authData = res?.token ? res : (res?.data || res);
+        login(authData.token, authData.user);
+        navigate('/');
+      } catch {
         const res: any = await api.post('/auth/register', {
           email: 'trader@quantflow.io',
           password: 'Password123!',
@@ -55,105 +58,97 @@ export const LoginPage: React.FC = () => {
         const authData = res?.token ? res : (res?.data || res);
         login(authData.token, authData.user);
         navigate('/');
-      } catch (err: any) {
-        setError(err?.message || 'Demo login failed');
       }
+    } catch (err: any) {
+      setError(err.message || 'Demo login failed');
     } finally {
       setLoading(false);
     }
   };
 
   return (
-    <div className="min-h-screen bg-[#f8f9fd] flex items-center justify-center p-4">
-      <div className="w-full max-w-md bg-white border border-[#e0e3eb] rounded-xl p-8 space-y-6 shadow-md text-[#131722]">
-        {/* Brand Header */}
-        <div className="text-center space-y-2">
-          <div className="inline-flex bg-[#2962ff] p-3 rounded-xl mb-1 shadow-sm">
-            <TrendingUp className="w-7 h-7 text-white" />
-          </div>
-          <h1 className="text-2xl font-extrabold font-mono text-[#131722] tracking-wide">QuantFlow Workstation</h1>
-          <p className="text-xs text-[#707a8a] font-medium">Sign in to access real-time market data and paper portfolio</p>
+    <AuthShell>
+      <div className="space-y-6">
+        <div>
+          <h2 className="text-2xl font-semibold tracking-tight">Sign in to the terminal</h2>
+          <p className="mt-1 text-sm text-fg-subtle">Access real-time market analytics and your paper portfolio.</p>
         </div>
 
-        {/* Error Alert */}
-        {error && (
-          <div className="flex items-center space-x-2 bg-[#fdecee] border border-[#f23645]/30 p-3 rounded-lg text-xs font-mono text-[#f23645] font-semibold">
-            <AlertCircle className="w-4 h-4 shrink-0" />
-            <span>{error}</span>
-          </div>
-        )}
+        <AnimatePresence>
+          {error && (
+            <motion.div
+              initial={{ opacity: 0, height: 0 }}
+              animate={{ opacity: 1, height: 'auto' }}
+              exit={{ opacity: 0, height: 0 }}
+              className="overflow-hidden"
+            >
+              <div className="flex items-center gap-2 rounded-md border border-down/30 bg-down/10 p-3 font-mono text-xs font-semibold text-down">
+                <AlertCircle className="h-4 w-4 shrink-0" />
+                <span>{error}</span>
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
 
-        {/* Google OAuth Login */}
-        <div className="space-y-3">
-          <GoogleLoginButton onSuccess={() => navigate('/')} onError={(err) => setError(err)} />
-          <div className="relative flex py-1 items-center">
-            <div className="flex-grow border-t border-[#e0e3eb]"></div>
-            <span className="flex-shrink mx-3 text-[10px] font-mono font-bold text-[#707a8a] uppercase">Or with Email</span>
-            <div className="flex-grow border-t border-[#e0e3eb]"></div>
-          </div>
-        </div>
-
-        {/* Form Login */}
-        <form onSubmit={handleSubmit} className="space-y-4 text-xs font-mono">
+        <form onSubmit={handleSubmit} className="space-y-4">
           <div>
-            <label className="block text-[#707a8a] uppercase font-bold text-[10px] mb-1">Email Address</label>
+            <FieldLabel htmlFor="email">Email Address</FieldLabel>
             <input
+              id="email"
               type="email"
               required
+              autoComplete="email"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               placeholder="trader@domain.com"
-              className="w-full bg-[#f8f9fd] border border-[#e0e3eb] rounded-lg px-3.5 py-2.5 text-[#131722] placeholder-[#9598a1] focus:outline-none focus:border-[#2962ff] font-semibold"
+              className="qf-input h-10"
             />
           </div>
 
           <div>
-            <div className="flex items-center justify-between mb-1">
-              <label className="block text-[#707a8a] uppercase font-bold text-[10px]">Password</label>
-              <Link to="/forgot-password" className="text-[11px] font-mono text-[#2962ff] hover:underline font-semibold flex items-center space-x-1">
-                <Lock className="w-3 h-3 mr-0.5" />
-                Forgot password?
-              </Link>
-            </div>
+            <FieldLabel htmlFor="password">Password</FieldLabel>
             <input
+              id="password"
               type="password"
               required
+              autoComplete="current-password"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               placeholder="••••••••"
-              className="w-full bg-[#f8f9fd] border border-[#e0e3eb] rounded-lg px-3.5 py-2.5 text-[#131722] placeholder-[#9598a1] focus:outline-none focus:border-[#2962ff] font-semibold"
+              className="qf-input h-10"
             />
           </div>
 
-          <button
-            type="submit"
-            disabled={loading}
-            className="w-full bg-[#2962ff] hover:bg-[#1e54e4] text-white font-bold py-2.5 rounded-lg transition-all shadow-xs flex items-center justify-center space-x-2 cursor-pointer"
-          >
-            <LogIn className="w-4 h-4" />
-            <span>{loading ? 'Authenticating...' : 'SIGN IN'}</span>
-          </button>
+          <Button type="submit" variant="primary" size="md" loading={loading} className="h-10 w-full">
+            <LogIn className="h-4 w-4" />
+            Sign In
+          </Button>
         </form>
 
-        {/* Demo Login & Footer */}
-        <div className="border-t border-[#f0f3fa] pt-4 text-center space-y-3">
-          <button
-            type="button"
-            onClick={handleDemoLogin}
-            disabled={loading}
-            className="w-full bg-[#e6f4f1] hover:bg-[#d0ece7] border border-[#089981]/30 text-[#089981] font-mono text-xs font-bold py-2 rounded-lg transition-colors cursor-pointer"
-          >
-            ⚡ ONE-CLICK DEMO ACCOUNT LOGIN
-          </button>
-
-          <p className="text-xs text-[#707a8a] font-medium">
-            Don't have an account?{' '}
-            <Link to="/register" className="text-[#2962ff] hover:underline font-mono font-bold">
-              Sign Up Free
-            </Link>
-          </p>
+        <div className="relative flex items-center gap-3">
+          <span className="h-px flex-1 bg-line" />
+          <span className="font-mono text-3xs uppercase tracking-[0.2em] text-fg-subtle">or</span>
+          <span className="h-px flex-1 bg-line" />
         </div>
+
+        <button
+          type="button"
+          onClick={handleDemoLogin}
+          disabled={loading}
+          className="group relative flex h-10 w-full items-center justify-center gap-2 overflow-hidden rounded-md border border-up/30 bg-up/10 font-mono text-xs font-bold text-up transition-[background-color,border-color,transform] duration-150 hover:border-up/50 hover:bg-up/15 active:scale-[0.98] disabled:opacity-50"
+        >
+          <span className="absolute inset-0 -translate-x-full bg-gradient-to-r from-transparent via-up/15 to-transparent transition-transform duration-700 group-hover:translate-x-full" />
+          <Zap className="relative h-4 w-4" />
+          <span className="relative">One-click demo account</span>
+        </button>
+
+        <p className="text-center text-xs text-fg-subtle">
+          Don't have an account?{' '}
+          <Link to="/register" className="font-mono font-semibold text-accent hover:underline">
+            Register here
+          </Link>
+        </p>
       </div>
-    </div>
+    </AuthShell>
   );
 };

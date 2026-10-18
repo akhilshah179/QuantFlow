@@ -1,28 +1,28 @@
 import { MarketDataProvider, StockQuote, TickUpdate, MarketOverviewData, ScreenerFilters } from './MarketDataProvider';
-import { Candle } from '../indicators';
 import { FinnhubMarketDataProvider } from './FinnhubMarketDataProvider';
 import { UpstoxMarketDataProvider } from './UpstoxMarketDataProvider';
 import { MockMarketDataProvider } from './MockMarketDataProvider';
-import { BinanceCryptoDataProvider } from './BinanceCryptoDataProvider';
+import { CryptoDataProvider } from './CryptoDataProvider';
 import { ForexDataProvider } from './ForexDataProvider';
 import { FuturesDataProvider } from './FuturesDataProvider';
+import { Candle } from '../indicators';
 import { config } from '../config';
 import { instrumentService } from '../services/instrumentService';
-import { upstoxInstrumentService } from '../services/upstoxInstrumentService';
 
 export class MarketDataProviderRouter implements MarketDataProvider {
   private finnhubProvider: FinnhubMarketDataProvider;
   private upstoxProvider: UpstoxMarketDataProvider;
   private mockProvider: MockMarketDataProvider;
-  private cryptoProvider: BinanceCryptoDataProvider;
+  private cryptoProvider: CryptoDataProvider;
   private forexProvider: ForexDataProvider;
   private futuresProvider: FuturesDataProvider;
+  private onTickCallback: ((tick: TickUpdate) => void) | null = null;
 
   constructor() {
     this.finnhubProvider = new FinnhubMarketDataProvider();
     this.upstoxProvider = new UpstoxMarketDataProvider();
     this.mockProvider = new MockMarketDataProvider();
-    this.cryptoProvider = new BinanceCryptoDataProvider();
+    this.cryptoProvider = new CryptoDataProvider();
     this.forexProvider = new ForexDataProvider();
     this.futuresProvider = new FuturesDataProvider();
   }
@@ -37,31 +37,23 @@ export class MarketDataProviderRouter implements MarketDataProvider {
     }
 
     const upper = symbol.toUpperCase();
-    const upperClean = upper.replace('/', '');
-    const cleanSymbol = upper.includes(':') ? upper.split(':')[0] : upper.split('.')[0];
 
-    if (upperClean === 'EURUSD' || upperClean === 'GBPUSD' || upperClean === 'USDJPY' || upperClean === 'USDINR' || upperClean === 'AUDUSD' || upperClean === 'USDCHF' || upperClean === 'USDCAD' || upperClean === 'NZDUSD') {
-      return this.forexProvider;
-    }
-
-    if (upper.endsWith('USD') || upper.endsWith('USDT') || upper.endsWith('BTC') || upper.endsWith('ETH') || upper.endsWith('SOL') || upper === 'BTC' || upper === 'ETH') {
+    if (upper.endsWith('USD') || upper.endsWith('BTC') || upper.endsWith('ETH') || upper.endsWith('SOL') || upper === 'BTC' || upper === 'ETH') {
+      if (upper === 'EURUSD' || upper === 'GBPUSD' || upper === 'USDJPY' || upper === 'USDINR' || upper === 'AUDUSD' || upper === 'USDCHF' || upper === 'USDCAD' || upper === 'NZDUSD') {
+        return this.forexProvider;
+      }
       return this.cryptoProvider;
     }
-
 
     if (upper === 'GOLD' || upper === 'SILVER' || upper === 'CRUDE OIL' || upper === 'NATURAL GAS' || upper === 'COPPER') {
       return this.futuresProvider;
     }
 
     const inst = instrumentService.getInstrument(upper);
-    const upstoxInst = upstoxInstrumentService.getInstrument(cleanSymbol) || upstoxInstrumentService.getInstrument(upper);
 
     if (
-      upper.endsWith('.NS') ||
-      upper.endsWith('.BO') ||
       upper.endsWith(':NSE') ||
       upper.endsWith(':BSE') ||
-      upstoxInst !== null ||
       inst?.exchange === 'NSE' ||
       inst?.exchange === 'BSE' ||
       inst?.country === 'IN' ||
@@ -108,7 +100,7 @@ export class MarketDataProviderRouter implements MarketDataProvider {
   }
 
   private cachedOverview: { data: MarketOverviewData; timestamp: number } | null = null;
-  private overviewCacheTTL = 15000;
+  private overviewCacheTTL = 15000; // 15s cache
 
   public async getMarketOverview(): Promise<MarketOverviewData> {
     if (this.cachedOverview && Date.now() - this.cachedOverview.timestamp < this.overviewCacheTTL) {
@@ -168,30 +160,50 @@ export class MarketDataProviderRouter implements MarketDataProvider {
       return this.mockProvider.getScreenerStocks(filters);
     }
 
-    if (filters.exchange === 'NSE' || filters.exchange === 'BSE') {
-      return this.upstoxProvider.getScreenerStocks(filters);
-    }
+    const [usStocks, inStocks] = await Promise.all([
+      this.finnhubProvider.getScreenerStocks(filters),
+      this.upstoxProvider.getScreenerStocks(filters),
+    ]);
 
-    return this.finnhubProvider.getScreenerStocks(filters);
+    return [...usStocks, ...inStocks];
   }
 
   public startTickStream(onTick: (tick: TickUpdate) => void): void {
-    this.finnhubProvider.startTickStream(onTick);
-    this.upstoxProvider.startTickStream(onTick);
-    this.cryptoProvider.startTickStream(onTick);
-    this.forexProvider.startTickStream(onTick);
-    this.futuresProvider.startTickStream(onTick);
-    this.mockProvider.startTickStream(onTick);
+    this.onTickCallback = onTick;
+
+    if (this.isMockMode()) {
+      this.mockProvider.startTickStream((tick) => {
+        if (this.onTickCallback) this.onTickCallback(tick);
+      });
+      return;
+    }
+
+    // Start real streams for both Finnhub & Upstox
+    this.finnhubProvider.startTickStream((tick) => {
+      if (this.onTickCallback) this.onTickCallback(tick);
+    });
+
+    this.upstoxProvider.startTickStream((tick) => {
+      if (this.onTickCallback) this.onTickCallback(tick);
+    });
+  }
+
+  public subscribeSymbol(symbol: string): void {
+    const provider = this.resolveProvider(symbol);
+    if (typeof (provider as any).subscribeSymbol === 'function') {
+      (provider as any).subscribeSymbol(symbol);
+    }
   }
 
   public stopTickStream(): void {
+    if (this.isMockMode()) {
+      this.mockProvider.stopTickStream();
+      return;
+    }
     this.finnhubProvider.stopTickStream();
     this.upstoxProvider.stopTickStream();
-    this.cryptoProvider.stopTickStream();
-    this.forexProvider.stopTickStream();
-    this.futuresProvider.stopTickStream();
-    this.mockProvider.stopTickStream();
   }
 }
 
-export const marketDataProvider = new MarketDataProviderRouter();
+export const marketDataProviderRouter = new MarketDataProviderRouter();
+export const marketDataProvider: MarketDataProvider = marketDataProviderRouter;

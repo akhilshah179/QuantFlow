@@ -63,11 +63,10 @@ export interface StockQuote {
   eps?: number;
   dividendYield?: number;
   beta?: number;
-  bid?: number | null;
-  ask?: number | null;
+  bid?: number;
+  ask?: number;
   bidSize?: number;
   askSize?: number;
-
   lastTradeTime?: number;
   marketStatus: MarketStatusType;
   dataQuality?: DataQualityType;
@@ -83,9 +82,8 @@ export interface TickUpdate {
   change: number;
   changePercent: number;
   volume: number;
-  bid?: number | null;
-  ask?: number | null;
-
+  bid?: number;
+  ask?: number;
   marketStatus?: MarketStatusType;
   dataQuality?: DataQualityType;
   isMock?: boolean;

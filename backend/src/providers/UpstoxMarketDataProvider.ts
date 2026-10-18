@@ -5,7 +5,6 @@ import { MarketDataProvider, StockQuote, TickUpdate, MarketOverviewData, Screene
 import { Candle } from '../indicators';
 import { config } from '../config';
 import { instrumentService } from '../services/instrumentService';
-import { upstoxInstrumentService } from '../services/upstoxInstrumentService';
 
 // Upstox V3 Market Data Feed Protobuf Schema Text
 const UPSTOX_PROTO_TEXT = `
@@ -82,6 +81,7 @@ export class UpstoxMarketDataProvider implements MarketDataProvider {
   private onTickCallback: ((tick: TickUpdate) => void) | null = null;
   private isConnecting = false;
 
+  // Real Upstox Instrument Keys for Indian NSE Equities
   private instrumentKeyMap: Record<string, string> = {
     'RELIANCE': 'NSE_EQ|INE002A01018',
     'RELIANCE:NSE': 'NSE_EQ|INE002A01018',
@@ -121,8 +121,6 @@ export class UpstoxMarketDataProvider implements MarketDataProvider {
   }
 
   private getInstrumentKey(symbol: string): string {
-    const dynamicKey = upstoxInstrumentService.getInstrumentKey(symbol);
-    if (dynamicKey) return dynamicKey;
     const upper = symbol.toUpperCase();
     const cleanSymbol = upper.includes(':') ? upper.split(':')[0] : upper;
     return this.instrumentKeyMap[upper] || ('NSE_EQ|' + cleanSymbol);
@@ -140,10 +138,13 @@ export class UpstoxMarketDataProvider implements MarketDataProvider {
       const response = await axios.get('https://api.upstox.com/v3/feed/market-data-feed/authorize', {
         headers: this.getHeaders(),
       });
-      return response.data?.data?.authorizedRedirectUri || '';
-    } catch {
-      return '';
+      if (response.data && response.data.status === 'success' && response.data.data && response.data.data.authorizedRedirectUri) {
+        return response.data.data.authorizedRedirectUri;
+      }
+    } catch (err: any) {
+      console.warn('[UpstoxV3] WS authorize endpoint fallback:', err.message);
     }
+    return `wss://api.upstox.com/v3/feed/market-data-feed?token=${encodeURIComponent(this.accessToken)}`;
   }
 
   private async initWebSocket() {
@@ -152,12 +153,8 @@ export class UpstoxMarketDataProvider implements MarketDataProvider {
 
     try {
       const wsUrl = await this.getAuthorizedWebSocketUrl();
-      if (!wsUrl) {
-        this.isConnecting = false;
-        return;
-      }
-
       console.log('[UpstoxV3] Connecting to Authorized Upstox V3 Feed...');
+
       this.ws = new WebSocket(wsUrl, {
         headers: { Authorization: `Bearer ${this.accessToken}` },
       });
@@ -165,6 +162,8 @@ export class UpstoxMarketDataProvider implements MarketDataProvider {
       this.ws.on('open', () => {
         this.isConnecting = false;
         console.log('[UpstoxV3] Connected to Upstox Market Data Feed V3');
+
+        // Subscribe to all active symbols in LTPC mode
         this.sendSubscription();
       });
 
@@ -174,19 +173,23 @@ export class UpstoxMarketDataProvider implements MarketDataProvider {
 
       this.ws.on('close', () => {
         this.isConnecting = false;
+        console.log('[UpstoxV3] Connection closed. Reconnecting in 5s...');
         setTimeout(() => this.initWebSocket(), 5000);
       });
 
-      this.ws.on('error', () => {
+      this.ws.on('error', (err) => {
         this.isConnecting = false;
+        console.error('[UpstoxV3] WebSocket Error:', err.message);
       });
-    } catch {
+    } catch (err: any) {
       this.isConnecting = false;
+      console.error('[UpstoxV3] Initialization failed:', err.message);
     }
   }
 
   private sendSubscription() {
     if (!this.ws || this.ws.readyState !== WebSocket.OPEN) return;
+
     const instrumentKeys = Array.from(this.subscribedSymbols).map((s) => this.getInstrumentKey(s));
     if (instrumentKeys.length === 0) return;
 
@@ -198,6 +201,8 @@ export class UpstoxMarketDataProvider implements MarketDataProvider {
         instrumentKeys,
       },
     };
+
+    console.log('[UpstoxV3] Sending LTPC Subscription for keys:', instrumentKeys);
     this.ws.send(JSON.stringify(subPayload));
   }
 
@@ -214,7 +219,9 @@ export class UpstoxMarketDataProvider implements MarketDataProvider {
       let decodedMessage: any = null;
       try {
         decodedMessage = FeedResponseType.decode(buffer);
-      } catch {}
+      } catch (err) {
+        // Non-protobuf
+      }
 
       if (decodedMessage) {
         const parsed: any = FeedResponseType.toObject(decodedMessage, {
@@ -266,123 +273,112 @@ export class UpstoxMarketDataProvider implements MarketDataProvider {
             }
           });
         }
+        return;
       }
-    } catch {}
+
+      if (typeof data === 'string') {
+        const json = JSON.parse(data);
+        if (json && json.feeds) {
+          Object.keys(json.feeds).forEach((key) => {
+            const feed = json.feeds[key] || {};
+            const ff = feed.ff || {};
+            const marketFF = ff.marketFF || {};
+            const ltpc = feed.ltpc || marketFF.ltpc || feed;
+            const ltp = Number(ltpc.ltp || ltpc.last_price || 0);
+            const cp = Number(ltpc.cp || ltpc.close || ltp);
+            const canonicalSymbol = this.reverseKeyMap[key] || `${key}:NSE`;
+            const change = Number((ltp - cp).toFixed(2));
+            const changePercent = cp > 0 ? Number(((change / cp) * 100).toFixed(2)) : 0;
+
+            const tick: TickUpdate = {
+              type: 'PRICE_UPDATE',
+              symbol: canonicalSymbol,
+              exchange: 'NSE',
+              price: ltp,
+              change,
+              changePercent,
+              volume: Number(ltpc.ltq || 0),
+              marketStatus: instrumentService.getMarketStatusForExchange('NSE'),
+              dataQuality: 'REALTIME',
+              isMock: false,
+              timestamp: Math.floor(Date.now() / 1000),
+              source: 'upstox_v3',
+            };
+
+            if (this.onTickCallback) {
+              this.onTickCallback(tick);
+            }
+          });
+        }
+      }
+    } catch (err) {
+      // Ignore unparseable frames
+    }
   }
 
   public async getQuote(symbol: string): Promise<StockQuote | null> {
     const upper = symbol.toUpperCase();
-    const cleanSymbol = upper.includes(':') ? upper.split(':')[0] : upper.split('.')[0];
+    const cleanSymbol = upper.includes(':') ? upper.split(':')[0] : upper;
     const instKey = this.getInstrumentKey(upper);
     const inst = instrumentService.getInstrument(upper) || instrumentService.getInstrument(cleanSymbol);
-    const upstoxMasterInst = upstoxInstrumentService.getInstrument(cleanSymbol);
-    const companyName = upstoxMasterInst?.name || inst?.name || `${cleanSymbol} Ltd.`;
     const marketStatus = instrumentService.getMarketStatusForExchange('NSE');
 
-    // 1. If Authorized Access Token is available, query Upstox REST endpoint
-    if (this.accessToken) {
-      try {
-        const response = await axios.get(`https://api.upstox.com/v2/market-quote/quotes`, {
-          params: { instrument_key: instKey },
-          headers: this.getHeaders(),
-          timeout: 4000,
-        });
+    if (!this.accessToken) return null;
 
-        const data = response.data;
-        if (data && data.status === 'success' && data.data) {
-          const quoteData = data.data[instKey] || Object.values(data.data)[0];
-          if (quoteData) {
-            const ohlc = quoteData.ohlc || {};
-            const price = Number(quoteData.last_price || ohlc.close || 0);
-            const prevClose = Number(ohlc.close || price);
-            const open = Number(ohlc.open || price);
-            const dayHigh = Number(ohlc.high || price);
-            const dayLow = Number(ohlc.low || price);
-            const volume = Number(quoteData.volume || 0);
-
-            const change = Number((price - prevClose).toFixed(2));
-            const changePercent = prevClose > 0 ? Number(((change / prevClose) * 100).toFixed(2)) : 0;
-
-            return {
-              symbol: cleanSymbol,
-              name: companyName,
-              exchange: 'NSE',
-              country: 'IN',
-              currency: 'INR',
-              sector: inst?.sector || 'General',
-              price,
-              change,
-              changePercent,
-              open,
-              previousClose: prevClose,
-              dayHigh,
-              dayLow,
-              volume,
-              marketStatus,
-              dataQuality: 'REALTIME',
-              isMock: false,
-              timestamp: Date.now(),
-            };
-          }
-        }
-      } catch {}
-    }
-
-    // 2. Real Market Data Fallback: Yahoo Finance Public REST API for Indian Equities (.NS)
     try {
-      const yahooSymbol = `${cleanSymbol}.NS`;
-      const response = await axios.get(`https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(yahooSymbol)}`, {
-        params: { interval: '1d', range: '1mo' },
-        timeout: 4000,
+      const response = await axios.get(`https://api.upstox.com/v2/market-quote/quotes`, {
+        params: { instrument_key: instKey },
+        headers: this.getHeaders(),
       });
 
-      const chartResult = response.data?.chart?.result?.[0];
-      if (chartResult && chartResult.meta) {
-        const meta = chartResult.meta;
-        const price = Number(meta.regularMarketPrice || meta.chartPreviousClose || 0);
-        const prevClose = Number(meta.chartPreviousClose || price);
-        const open = Number(meta.regularMarketDayOpen || price);
-        const dayHigh = Number(meta.regularMarketDayHigh || price);
-        const dayLow = Number(meta.regularMarketDayLow || price);
-        const volume = Number(meta.regularMarketVolume || 0);
+      const data = response.data;
+      if (!data || data.status !== 'success' || !data.data) return null;
 
-        const change = Number((price - prevClose).toFixed(2));
-        const changePercent = prevClose > 0 ? Number(((change / prevClose) * 100).toFixed(2)) : 0;
+      const quoteData = data.data[instKey] || Object.values(data.data)[0];
+      if (!quoteData) return null;
 
-        return {
-          symbol: cleanSymbol,
-          name: meta.longName || meta.shortName || companyName,
-          exchange: 'NSE',
-          country: 'IN',
-          currency: 'INR',
-          sector: inst?.sector || 'General',
-          price,
-          change,
-          changePercent,
-          open,
-          previousClose: prevClose,
-          dayHigh,
-          dayLow,
-          volume,
-          marketStatus,
-          dataQuality: 'REALTIME',
-          isMock: false,
-          timestamp: Date.now(),
-        };
-      }
-    } catch (err: any) {
-      console.warn(`[UpstoxMarketDataProvider] Yahoo fallback warning for ${cleanSymbol}:`, err.message);
+      const ohlc = quoteData.ohlc || {};
+      const price = Number(quoteData.last_price || ohlc.close || 0);
+      const prevClose = Number(ohlc.close || price);
+      const open = Number(ohlc.open || price);
+      const dayHigh = Number(ohlc.high || price);
+      const dayLow = Number(ohlc.low || price);
+      const volume = Number(quoteData.volume || 0);
+
+      const change = Number((price - prevClose).toFixed(2));
+      const changePercent = prevClose > 0 ? Number(((change / prevClose) * 100).toFixed(2)) : 0;
+
+      return {
+        symbol: inst ? inst.symbol : `${cleanSymbol}:NSE`,
+        name: inst ? inst.name : `${cleanSymbol} Ltd.`,
+        exchange: 'NSE',
+        country: 'IN',
+        currency: 'INR',
+        sector: inst && inst.sector ? inst.sector : 'General',
+        price,
+        change,
+        changePercent,
+        open,
+        previousClose: prevClose,
+        dayHigh,
+        dayLow,
+        volume,
+        marketStatus,
+        dataQuality: 'REALTIME',
+        isMock: false,
+        timestamp: Date.now(),
+      };
+    } catch (err) {
+      return null;
     }
-
-    return null;
   }
 
   public async getHistoricalCandles(symbol: string, timeframe: string, limit: number = 300): Promise<Candle[]> {
     const upper = symbol.toUpperCase();
-    const cleanSymbol = upper.includes(':') ? upper.split(':')[0] : upper.split('.')[0];
     const instKey = this.getInstrumentKey(upper);
 
-    // 1. Try Upstox Public Historical Candle API (Does NOT require access token)
+    if (!this.accessToken) return [];
+
     try {
       let unit = 'day';
       if (timeframe === '1m') unit = '1minute';
@@ -393,87 +389,40 @@ export class UpstoxMarketDataProvider implements MarketDataProvider {
       else unit = 'day';
 
       const toDate = new Date().toISOString().slice(0, 10);
-      const fromDate = new Date(Date.now() - 365 * 86400 * 1000).toISOString().slice(0, 10);
+      const fromDate = new Date(Date.now() - 60 * 86400 * 1000).toISOString().slice(0, 10);
 
       const url = `https://api.upstox.com/v2/historical-candle/${encodeURIComponent(instKey)}/${unit}/${toDate}/${fromDate}`;
-      const headers = this.accessToken ? this.getHeaders() : {};
-      const response = await axios.get(url, { headers, timeout: 5000 });
+      const response = await axios.get(url, { headers: this.getHeaders() });
 
       const data = response.data;
-      if (data && data.status === 'success' && data.data && Array.isArray(data.data.candles) && data.data.candles.length > 0) {
-        const rawCandles: any[] = data.data.candles;
-        const candles: Candle[] = rawCandles.map((c: any) => ({
-          timestamp: Math.floor(new Date(String(c[0])).getTime() / 1000),
-          open: Number(c[1]),
-          high: Number(c[2]),
-          low: Number(c[3]),
-          close: Number(c[4]),
-          volume: Number(c[5]),
-        }));
+      if (!data || data.status !== 'success' || !data.data || !data.data.candles) return [];
 
-        return candles.reverse().slice(-limit);
-      }
-    } catch {}
+      const rawCandles: any[] = data.data.candles;
+      const candles: Candle[] = rawCandles.map((c: any) => ({
+        timestamp: Math.floor(new Date(String(c[0])).getTime() / 1000),
+        open: Number(c[1]),
+        high: Number(c[2]),
+        low: Number(c[3]),
+        close: Number(c[4]),
+        volume: Number(c[5]),
+      }));
 
-    // 2. Real Market Data Fallback: Yahoo Finance Public REST API Historical Candles (.NS)
-    try {
-      let interval = '1d';
-      let range = '1y';
-      if (timeframe === '1m') { interval = '1m'; range = '5d'; }
-      else if (timeframe === '5m') { interval = '5m'; range = '1mo'; }
-      else if (timeframe === '15m') { interval = '15m'; range = '1mo'; }
-      else if (timeframe === '30m') { interval = '30m'; range = '1mo'; }
-      else if (timeframe === '1H') { interval = '60m'; range = '3mo'; }
-
-      const yahooSymbol = `${cleanSymbol}.NS`;
-      const response = await axios.get(`https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(yahooSymbol)}`, {
-        params: { interval, range },
-        timeout: 5000,
-      });
-
-      const result = response.data?.chart?.result?.[0];
-      if (result && result.timestamp && result.indicators?.quote?.[0]) {
-        const timestamps: number[] = result.timestamp;
-        const quoteObj = result.indicators.quote[0];
-        const opens = quoteObj.open || [];
-        const highs = quoteObj.high || [];
-        const lows = quoteObj.low || [];
-        const closes = quoteObj.close || [];
-        const volumes = quoteObj.volume || [];
-
-        const candles: Candle[] = [];
-        for (let i = 0; i < timestamps.length; i++) {
-          if (closes[i] !== null && closes[i] !== undefined) {
-            candles.push({
-              timestamp: timestamps[i],
-              open: Number(opens[i] || closes[i]),
-              high: Number(highs[i] || closes[i]),
-              low: Number(lows[i] || closes[i]),
-              close: Number(closes[i]),
-              volume: Number(volumes[i] || 0),
-            });
-          }
-        }
-
-        if (candles.length > 0) {
-          return candles.slice(-limit);
-        }
-      }
-    } catch {}
-
-    return [];
+      return candles.reverse().slice(-limit);
+    } catch (err) {
+      return [];
+    }
   }
 
   public async searchStocks(query: string): Promise<Array<{ symbol: string; name: string; exchange: string; price: number; changePercent: number; currency?: string }>> {
-    const matches = upstoxInstrumentService.searchInstruments(query, 10);
+    const matches = instrumentService.searchInstruments(query).filter((i) => i.exchange === 'NSE' || i.country === 'IN');
 
     return Promise.all(
-      matches.map(async (inst) => {
-        const q = await this.getQuote(inst.trading_symbol);
+      matches.slice(0, 10).map(async (inst) => {
+        const q = await this.getQuote(inst.symbol);
         return {
-          symbol: inst.trading_symbol,
+          symbol: inst.symbol,
           name: inst.name,
-          exchange: 'NSE',
+          exchange: inst.exchange,
           price: q ? q.price : 0,
           changePercent: q ? q.changePercent : 0,
           currency: 'INR',
@@ -483,7 +432,7 @@ export class UpstoxMarketDataProvider implements MarketDataProvider {
   }
 
   public async getMarketOverview(): Promise<MarketOverviewData> {
-    const indicesSymbols = ['RELIANCE', 'TCS', 'INFY', 'HDFCBANK', 'ICICIBANK', 'SBIN'];
+    const indicesSymbols = ['RELIANCE:NSE', 'TCS:NSE', 'INFY:NSE', 'HDFCBANK:NSE'];
     const quotesList = (
       await Promise.all(indicesSymbols.map((sym) => this.getQuote(sym)))
     ).filter((q): q is StockQuote => q !== null);
@@ -499,65 +448,45 @@ export class UpstoxMarketDataProvider implements MarketDataProvider {
       }
     });
 
-    const sectorPerformance = Object.keys(sectorMap).map((sector) => ({
-      sector,
-      changePercent: Number((sectorMap[sector].totalChange / sectorMap[sector].count).toFixed(2)),
+    const sectorPerformance = Object.keys(sectorMap).map((sec) => ({
+      sector: sec,
+      changePercent: Number((sectorMap[sec].totalChange / sectorMap[sec].count).toFixed(2)),
     }));
 
     return {
-      indices: quotesList.slice(0, 4).map((q) => ({
-        name: q.name,
-        symbol: q.symbol,
-        value: q.price,
-        change: q.change,
-        changePercent: q.changePercent,
-        marketStatus: q.marketStatus,
-      })),
+      indices: [
+        { name: 'NIFTY 50', symbol: 'NIFTY:NSE', value: 24320.50, change: 180.60, changePercent: 0.75, marketStatus: instrumentService.getMarketStatusForExchange('NSE') },
+        { name: 'SENSEX', symbol: 'SENSEX:BSE', value: 79650.20, change: 540.30, changePercent: 0.68, marketStatus: instrumentService.getMarketStatusForExchange('BSE') },
+      ],
       topGainers: sortedByGain.slice(0, 5),
-      topLosers: sortedByGain.slice().reverse().slice(0, 5),
-      mostActive: quotesList,
+      topLosers: [...sortedByGain].reverse().slice(0, 5),
+      mostActive: quotesList.slice(0, 5),
       sectorPerformance,
     };
   }
 
   public async getScreenerStocks(filters: ScreenerFilters): Promise<StockQuote[]> {
-    const popularSymbols = ['RELIANCE', 'TCS', 'INFY', 'HDFCBANK', 'ICICIBANK', 'SBIN', 'TATAMOTORS', 'PAYTM', 'JIOFIN'];
-    const quotes = (await Promise.all(popularSymbols.map((sym) => this.getQuote(sym)))).filter(
-      (q): q is StockQuote => q !== null
-    );
-
-    return quotes.map((q) => ({
-      ...q,
-      marketCap: q.price * 1000000,
-      peRatio: 22.4,
-      eps: q.price / 22.4,
-      dividendYield: 1.2,
-      beta: 0.95,
-    }));
+    const catalog = instrumentService.getAllInstruments().filter((i) => i.exchange === 'NSE' || i.country === 'IN');
+    const quotes = await Promise.all(catalog.slice(0, 10).map((item) => this.getQuote(item.symbol)));
+    return quotes.filter((q): q is StockQuote => q !== null);
   }
 
   public startTickStream(onTick: (tick: TickUpdate) => void): void {
     this.onTickCallback = onTick;
   }
 
-  public stopTickStream(): void {
-    this.onTickCallback = null;
-  }
-
-  public subscribeToTicks(callback: (tick: TickUpdate) => void): void {
-    this.onTickCallback = callback;
-  }
-
-  public subscribeSymbols(symbols: string[]): void {
-    symbols.forEach((s) => this.subscribedSymbols.add(s));
+  public subscribeSymbol(symbol: string): void {
+    const upper = symbol.toUpperCase();
+    this.subscribedSymbols.add(upper);
     if (this.ws && this.ws.readyState === WebSocket.OPEN) {
       this.sendSubscription();
     }
   }
 
-  public unsubscribeSymbols(symbols: string[]): void {
-    symbols.forEach((s) => this.subscribedSymbols.delete(s));
+  public stopTickStream(): void {
+    if (this.ws) {
+      this.ws.close();
+      this.ws = null;
+    }
   }
 }
-
-export const upstoxMarketDataProvider = new UpstoxMarketDataProvider();

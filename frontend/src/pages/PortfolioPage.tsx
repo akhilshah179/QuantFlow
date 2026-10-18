@@ -1,170 +1,222 @@
 import React, { useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { motion } from 'motion/react';
 import { usePortfolioStore } from '../store/portfolioStore';
-import { useMarketStore } from '../store/marketStore';
-import { formatCurrency, formatPercent } from '../utils/formatters';
-import { Briefcase, Wallet, TrendingUp, TrendingDown, DollarSign, PieChart } from 'lucide-react';
+import { useLivePortfolio } from '../hooks/useLivePortfolio';
+import { formatCurrency, formatPrice, formatSignedCurrency, formatSignedPercent } from '../utils/formatters';
+import { Briefcase, Wallet, TrendingUp, TrendingDown, DollarSign, PieChart, ArrowUpRight } from 'lucide-react';
+import { PageHeader } from '../components/ui/PageHeader';
+import { Panel } from '../components/ui/Panel';
+import { AnimatedNumber } from '../components/ui/AnimatedNumber';
+import { LiveValue } from '../components/ui/LiveValue';
+import { Button } from '../components/ui/Button';
+import { EmptyState, Skeleton, signTone } from '../components/ui/misc';
+import { cn } from '../utils/cn';
+
+const ALLOC_COLORS = ['#f5b142', '#60a5fa', '#2dd4bf', '#c084fc', '#f472b6', '#fb923c', '#a3e635'];
 
 export const PortfolioPage: React.FC = () => {
   const navigate = useNavigate();
-  const { summary, fetchPortfolio, isLoading } = usePortfolioStore();
-  const quotes = useMarketStore((state) => state.quotes);
+  const summary = usePortfolioStore((s) => s.summary);
+  const fetchPortfolio = usePortfolioStore((s) => s.fetchPortfolio);
+  const isLoading = usePortfolioStore((s) => s.isLoading);
+  const live = useLivePortfolio();
 
   useEffect(() => {
     fetchPortfolio();
   }, [fetchPortfolio]);
 
-  if (isLoading || !summary) {
+  if ((isLoading && !summary) || !summary || !live) {
     return (
-      <div className="p-8 text-center text-[#707a8a] font-mono animate-pulse">
-        Calculating Portfolio Holdings & Performance...
+      <div className="space-y-4">
+        <Skeleton className="h-12 w-72" />
+        <div className="grid grid-cols-2 gap-3 lg:grid-cols-5">
+          {Array.from({ length: 5 }).map((_, i) => (
+            <Skeleton key={i} className="h-20" />
+          ))}
+        </div>
+        <Skeleton className="h-72" />
       </div>
     );
   }
 
-  // Recalculate Mark-to-Market Valuation with WebSocket Live Quotes
-  let liveHoldingsValue = 0;
-  const liveHoldings = summary.holdings.map((h) => {
-    const liveTick = quotes[h.symbol];
-    const price = liveTick ? liveTick.price : h.currentPrice;
-    const val = h.quantity * price;
-    const cost = h.quantity * h.averageBuyPrice;
-    const pnl = val - cost;
-    const pnlPct = cost > 0 ? (pnl / cost) * 100 : 0;
-    liveHoldingsValue += val;
-
-    return {
-      ...h,
-      currentPrice: price,
-      currentValue: val,
-      unrealizedPnL: pnl,
-      unrealizedPnLPercent: pnlPct,
-    };
-  });
-
-  const totalNetWorth = summary.cashBalance + liveHoldingsValue;
-  const totalUnrealizedPnL = liveHoldings.reduce((sum, h) => sum + h.unrealizedPnL, 0);
+  const { liveHoldings, totalNetWorth, totalUnrealizedPnL, totalCost } = live;
   const isUnrealizedPos = totalUnrealizedPnL >= 0;
   const isRealizedPos = summary.realizedPnL >= 0;
+  const pnlPct = totalCost > 0 ? (totalUnrealizedPnL / totalCost) * 100 : 0;
+  const sorted = [...liveHoldings].sort((a, b) => b.currentValue - a.currentValue);
+
+  const cards = [
+    { label: 'Total Net Worth', icon: PieChart, value: totalNetWorth, format: (v: number) => formatCurrency(v), tone: 'text-fg', iconTone: 'text-accent', from: summary.cashBalance },
+    { label: 'Available Cash', icon: Wallet, value: summary.cashBalance, format: (v: number) => formatCurrency(v), tone: 'text-up', iconTone: 'text-up' },
+    { label: 'Invested Amount', icon: DollarSign, value: summary.investedAmount, format: (v: number) => formatCurrency(v), tone: 'text-fg', iconTone: 'text-fg-subtle' },
+    {
+      label: 'Unrealized P/L',
+      icon: isUnrealizedPos ? TrendingUp : TrendingDown,
+      value: totalUnrealizedPnL,
+      format: formatSignedCurrency,
+      tone: signTone(totalUnrealizedPnL),
+      iconTone: isUnrealizedPos ? 'text-up' : 'text-down',
+      sub: formatSignedPercent(pnlPct),
+    },
+    {
+      label: 'Realized P/L',
+      icon: isRealizedPos ? TrendingUp : TrendingDown,
+      value: summary.realizedPnL,
+      format: formatSignedCurrency,
+      tone: signTone(summary.realizedPnL),
+      iconTone: isRealizedPos ? 'text-up' : 'text-down',
+    },
+  ];
 
   return (
-    <div className="space-y-4 text-[#131722]">
-      {/* Header */}
-      <div className="bg-white border border-[#e0e3eb] rounded-lg p-4 shadow-xs flex items-center justify-between">
-        <div>
-          <h1 className="text-lg font-bold font-mono text-[#131722] flex items-center space-x-2">
-            <Briefcase className="w-5 h-5 text-[#2962ff]" />
-            <span>Paper Portfolio & Holdings</span>
-          </h1>
-          <p className="text-xs text-[#707a8a] font-medium mt-0.5">Live mark-to-market performance and equity asset allocation</p>
-        </div>
+    <div className="space-y-4">
+      <PageHeader
+        icon={Briefcase}
+        eyebrow="Trading / Portfolio"
+        title="Paper Portfolio & Holdings"
+        subtitle="Live mark-to-market performance and equity asset allocation"
+        actions={
+          <Button variant="primary" onClick={() => navigate('/paper-trading')}>
+            Trade <ArrowUpRight className="h-3.5 w-3.5" />
+          </Button>
+        }
+      />
+
+      {/* Summary cards */}
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-5">
+        {cards.map((c, i) => {
+          const Icon = c.icon;
+          return (
+            <motion.div
+              key={c.label}
+              initial={{ opacity: 0, y: 8 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: i * 0.05, duration: 0.25 }}
+              className={cn('qf-panel p-3.5', i === 0 && 'sm:col-span-2 lg:col-span-1')}
+            >
+              <div className="flex items-center gap-1.5 font-mono text-2xs uppercase tracking-wider text-fg-subtle">
+                <Icon className={cn('h-3.5 w-3.5', c.iconTone)} />
+                <span>{c.label}</span>
+              </div>
+              <AnimatedNumber
+                value={c.value}
+                initialFrom={c.from ?? 0}
+                format={c.format}
+                tintOnChange={i === 0}
+                className={cn('mt-1.5 text-xl font-semibold tracking-tight', c.tone)}
+              />
+              {c.sub && <div className={cn('num mt-0.5 text-xs', c.tone)}>{c.sub}</div>}
+            </motion.div>
+          );
+        })}
       </div>
 
-      {/* Summary Cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3">
-        <div className="bg-white border border-[#e0e3eb] rounded-lg p-3.5 shadow-xs">
-          <div className="flex items-center space-x-1.5 text-xs font-mono text-[#707a8a]">
-            <PieChart className="w-3.5 h-3.5 text-[#2962ff]" />
-            <span>Total Net Worth</span>
+      {/* Allocation */}
+      {sorted.length > 0 && (
+        <Panel title="Allocation" icon={PieChart}>
+          <div className="flex h-2.5 overflow-hidden rounded-full bg-line">
+            {sorted.map((h, i) => (
+              <motion.span
+                key={h.symbol}
+                title={`${h.symbol} ${((h.currentValue / totalNetWorth) * 100).toFixed(1)}%`}
+                className="h-full border-r border-bg/60 last:border-0"
+                style={{ background: ALLOC_COLORS[i % ALLOC_COLORS.length] }}
+                initial={{ width: 0 }}
+                animate={{ width: `${(h.currentValue / totalNetWorth) * 100}%` }}
+                transition={{ type: 'spring', stiffness: 140, damping: 24 }}
+              />
+            ))}
+            <motion.span
+              className="h-full bg-fg-subtle/35"
+              initial={{ width: 0 }}
+              animate={{ width: `${(summary.cashBalance / totalNetWorth) * 100}%` }}
+              transition={{ type: 'spring', stiffness: 140, damping: 24 }}
+            />
           </div>
-          <div className="text-xl font-extrabold font-mono text-[#131722] mt-1">
-            {formatCurrency(totalNetWorth)}
+          <div className="mt-3 flex flex-wrap gap-x-4 gap-y-1.5 font-mono text-2xs text-fg-muted">
+            {sorted.map((h, i) => (
+              <span key={h.symbol} className="flex items-center gap-1.5">
+                <span className="h-2 w-2 rounded-sm" style={{ background: ALLOC_COLORS[i % ALLOC_COLORS.length] }} />
+                {h.symbol}
+                <span className="num text-fg-subtle">{((h.currentValue / totalNetWorth) * 100).toFixed(1)}%</span>
+              </span>
+            ))}
+            <span className="flex items-center gap-1.5">
+              <span className="h-2 w-2 rounded-sm bg-fg-subtle/35" />
+              Cash
+              <span className="num text-fg-subtle">{((summary.cashBalance / totalNetWorth) * 100).toFixed(1)}%</span>
+            </span>
           </div>
-        </div>
+        </Panel>
+      )}
 
-        <div className="bg-white border border-[#e0e3eb] rounded-lg p-3.5 shadow-xs">
-          <div className="flex items-center space-x-1.5 text-xs font-mono text-[#707a8a]">
-            <Wallet className="w-3.5 h-3.5 text-[#089981]" />
-            <span>Available Cash</span>
-          </div>
-          <div className="text-xl font-extrabold font-mono text-[#089981] mt-1">
-            {formatCurrency(summary.cashBalance)}
-          </div>
-        </div>
-
-        <div className="bg-white border border-[#e0e3eb] rounded-lg p-3.5 shadow-xs">
-          <div className="flex items-center space-x-1.5 text-xs font-mono text-[#707a8a]">
-            <DollarSign className="w-3.5 h-3.5 text-[#707a8a]" />
-            <span>Invested Amount</span>
-          </div>
-          <div className="text-xl font-extrabold font-mono text-[#131722] mt-1">
-            {formatCurrency(summary.investedAmount)}
-          </div>
-        </div>
-
-        <div className="bg-white border border-[#e0e3eb] rounded-lg p-3.5 shadow-xs">
-          <div className="flex items-center space-x-1.5 text-xs font-mono text-[#707a8a]">
-            {isUnrealizedPos ? <TrendingUp className="w-3.5 h-3.5 text-[#089981]" /> : <TrendingDown className="w-3.5 h-3.5 text-[#f23645]" />}
-            <span>Unrealized P/L</span>
-          </div>
-          <div className={`text-xl font-extrabold font-mono mt-1 ${isUnrealizedPos ? 'text-[#089981]' : 'text-[#f23645]'}`}>
-            {isUnrealizedPos ? '+' : ''}{formatCurrency(totalUnrealizedPnL)}
-          </div>
-        </div>
-
-        <div className="bg-white border border-[#e0e3eb] rounded-lg p-3.5 shadow-xs">
-          <div className="flex items-center space-x-1.5 text-xs font-mono text-[#707a8a]">
-            {isRealizedPos ? <TrendingUp className="w-3.5 h-3.5 text-[#089981]" /> : <TrendingDown className="w-3.5 h-3.5 text-[#f23645]" />}
-            <span>Realized P/L</span>
-          </div>
-          <div className={`text-xl font-extrabold font-mono mt-1 ${isRealizedPos ? 'text-[#089981]' : 'text-[#f23645]'}`}>
-            {isRealizedPos ? '+' : ''}{formatCurrency(summary.realizedPnL)}
-          </div>
-        </div>
-      </div>
-
-      {/* Holdings Table */}
-      <div className="bg-white border border-[#e0e3eb] rounded-lg p-3.5 shadow-xs">
-        <h2 className="text-xs font-bold font-mono text-[#131722] mb-3 uppercase tracking-wider border-b border-[#f0f3fa] pb-2">Open Positions</h2>
+      {/* Holdings */}
+      <Panel title="Open Positions" icon={Briefcase} bodyClassName="p-0">
         {liveHoldings.length > 0 ? (
           <div className="overflow-x-auto">
-            <table className="w-full text-left text-xs font-mono">
+            <table className="qf-table">
               <thead>
-                <tr className="text-[#707a8a] border-b border-[#e0e3eb] uppercase text-[10px]">
-                  <th className="pb-2">Symbol</th>
-                  <th className="pb-2">Quantity</th>
-                  <th className="pb-2">Avg Price</th>
-                  <th className="pb-2">Live Price</th>
-                  <th className="pb-2">Market Value</th>
-                  <th className="pb-2">Unrealized P/L</th>
-                  <th className="pb-2 text-right">Action</th>
+                <tr>
+                  <th>Symbol</th>
+                  <th className="text-right">Quantity</th>
+                  <th className="text-right">Avg Price</th>
+                  <th className="text-right">Live Price</th>
+                  <th className="text-right">Market Value</th>
+                  <th className="text-right">Unrealized P/L</th>
+                  <th className="text-right">Action</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-[#f0f3fa]">
-                {liveHoldings.map((h) => {
-                  const isPos = h.unrealizedPnL >= 0;
-                  return (
-                    <tr key={h.id} className="hover:bg-[#f8f9fd] transition-colors">
-                      <td className="py-2.5 font-bold text-[#131722] text-xs">{h.symbol}</td>
-                      <td className="py-2.5 text-[#131722]">{h.quantity}</td>
-                      <td className="py-2.5 text-[#131722]">{formatCurrency(h.averageBuyPrice)}</td>
-                      <td className="py-2.5 font-bold text-[#131722]">{formatCurrency(h.currentPrice)}</td>
-                      <td className="py-2.5 font-bold text-[#131722]">{formatCurrency(h.currentValue)}</td>
-                      <td className="py-2.5">
-                        <span className={`font-bold px-1.5 py-0.5 rounded text-[11px] ${isPos ? 'bg-[#e6f4f1] text-[#089981]' : 'bg-[#fdecee] text-[#f23645]'}`}>
-                          {isPos ? '+' : ''}{formatCurrency(h.unrealizedPnL)} ({formatPercent(h.unrealizedPnLPercent)})
-                        </span>
-                      </td>
-                      <td className="py-2.5 text-right">
-                        <button
-                          onClick={() => navigate(`/stocks/${h.symbol}`)}
-                          className="bg-[#e8f0fe] hover:bg-[#2962ff] text-[#2962ff] hover:text-white px-2.5 py-1 rounded transition-colors text-[10px] font-bold"
-                        >
-                          Trade / Analyze
-                        </button>
-                      </td>
-                    </tr>
-                  );
-                })}
+              <tbody>
+                {liveHoldings.map((h) => (
+                  <tr key={h.id} className="group">
+                    <td>
+                      <div className="font-semibold text-fg">{h.symbol}</div>
+                      <div className="font-sans text-3xs text-fg-subtle">{h.name}</div>
+                    </td>
+                    <td className="num text-right text-fg-muted">{h.quantity}</td>
+                    <td className="num text-right text-fg-muted">{formatCurrency(h.averageBuyPrice)}</td>
+                    <td className="text-right">
+                      <LiveValue symbol={h.symbol} value={h.currentPrice} format={(v) => formatPrice(v)} className="font-semibold text-fg" />
+                    </td>
+                    <td className="text-right">
+                      <AnimatedNumber value={h.currentValue} format={(v) => formatCurrency(v)} duration={0.4} className="font-semibold text-fg" />
+                    </td>
+                    <td className="text-right">
+                      <span
+                        className={cn(
+                          'inline-flex items-center gap-1.5 rounded px-1.5 py-0.5 font-semibold ring-1 ring-inset',
+                          h.unrealizedPnL >= 0 ? 'bg-up/10 text-up ring-up/20' : 'bg-down/10 text-down ring-down/20',
+                        )}
+                      >
+                        <AnimatedNumber value={h.unrealizedPnL} format={formatSignedCurrency} duration={0.4} />
+                        <span className="num text-[11px] opacity-80">{formatSignedPercent(h.unrealizedPnLPercent)}</span>
+                      </span>
+                    </td>
+                    <td className="text-right">
+                      <Button size="xs" variant="secondary" onClick={() => navigate(`/stocks/${h.symbol}`)}>
+                        Trade / Analyze
+                      </Button>
+                    </td>
+                  </tr>
+                ))}
               </tbody>
             </table>
           </div>
         ) : (
-          <div className="p-8 text-center text-[#707a8a] font-mono">
-            You currently hold no open stock positions. Use Paper Trading to execute orders.
-          </div>
+          <EmptyState
+            icon={Briefcase}
+            title="You currently hold no open stock positions."
+            hint="Use Paper Trading to execute orders."
+            action={
+              <Button variant="primary" onClick={() => navigate('/paper-trading')}>
+                Open Paper Trading
+              </Button>
+            }
+            className="m-3.5"
+          />
         )}
-      </div>
+      </Panel>
     </div>
   );
 };

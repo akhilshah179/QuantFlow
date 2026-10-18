@@ -1,7 +1,10 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Search, X, TrendingUp, Globe, DollarSign, Activity } from 'lucide-react';
+import { AnimatePresence, motion } from 'motion/react';
+import { Search, X, TrendingUp, Globe, DollarSign, Activity, CornerDownLeft, Layers } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import api from '../../services/api';
+import { cn } from '../../utils/cn';
+import { formatSignedPercent } from '../../utils/formatters';
 
 interface SearchResult {
   symbol: string;
@@ -17,16 +20,29 @@ interface Props {
   onClose: () => void;
 }
 
+const POPULAR = ['AAPL', 'TSLA', 'NVDA', 'RELIANCE:NSE', 'TCS:NSE', 'BTCUSD', 'ETHUSD', 'EURUSD', 'GOLD'];
+
+function exchangeIcon(exchange: string) {
+  if (exchange === 'CRYPTO') return Activity;
+  if (exchange === 'FOREX') return DollarSign;
+  if (exchange === 'COMMODITIES') return Layers;
+  return Globe;
+}
+
 export const GlobalSearchModal: React.FC<Props> = ({ isOpen, onClose }) => {
   const [query, setQuery] = useState('');
   const [results, setResults] = useState<SearchResult[]>([]);
   const [loading, setLoading] = useState(false);
+  const [cursor, setCursor] = useState(0);
   const navigate = useNavigate();
   const inputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     if (isOpen) {
       setTimeout(() => inputRef.current?.focus(), 50);
+    } else {
+      setQuery('');
+      setCursor(0);
     }
   }, [isOpen]);
 
@@ -44,6 +60,7 @@ export const GlobalSearchModal: React.FC<Props> = ({ isOpen, onClose }) => {
         .then((res: any) => {
           const list = Array.isArray(res) ? res : res?.data || [];
           setResults(list);
+          setCursor(0);
           setLoading(false);
         })
         .catch(() => {
@@ -55,111 +72,161 @@ export const GlobalSearchModal: React.FC<Props> = ({ isOpen, onClose }) => {
     return () => clearTimeout(timer);
   }, [query]);
 
-  if (!isOpen) return null;
-
-  const handleSelect = (symbol: string, exchange: string, providerSymbol?: string) => {
+  const handleSelect = (symbol: string, exchange: string) => {
     onClose();
-    const targetSymbol = providerSymbol || symbol;
     if (exchange === 'CRYPTO') {
-      navigate('/crypto');
+      navigate(`/crypto?symbol=${encodeURIComponent(symbol)}`);
     } else if (exchange === 'FOREX') {
-      navigate('/forex');
+      navigate(`/forex?symbol=${encodeURIComponent(symbol)}`);
     } else if (exchange === 'COMMODITIES') {
-      navigate('/futures');
+      navigate(`/futures?symbol=${encodeURIComponent(symbol)}`);
     } else {
-      navigate(`/stocks/${targetSymbol}`);
+      navigate(`/stocks/${symbol}`);
+    }
+  };
+
+  const onKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === 'Escape') {
+      e.preventDefault();
+      onClose();
+    } else if (e.key === 'ArrowDown' && results.length) {
+      e.preventDefault();
+      setCursor((c) => (c + 1) % results.length);
+    } else if (e.key === 'ArrowUp' && results.length) {
+      e.preventDefault();
+      setCursor((c) => (c - 1 + results.length) % results.length);
+    } else if (e.key === 'Enter' && results[cursor]) {
+      e.preventDefault();
+      handleSelect(results[cursor].symbol, results[cursor].exchange);
     }
   };
 
   return (
-    <div className="fixed inset-0 z-50 bg-black/40 backdrop-blur-xs flex items-start justify-center pt-20 p-4">
-      <div className="bg-white border border-[#e0e3eb] w-full max-w-2xl rounded-xl shadow-2xl overflow-hidden animate-fadeIn">
-        {/* Header Search Input */}
-        <div className="p-3.5 border-b border-[#e0e3eb] flex items-center space-x-3 bg-[#f8f9fd]">
-          <Search className="w-4 h-4 text-[#2962ff]" />
-          <input
-            ref={inputRef}
-            type="text"
-            className="flex-1 bg-transparent text-[#131722] font-mono text-sm placeholder-[#9598a1] outline-none font-medium"
-            placeholder="Search symbol, company, index, crypto, forex (e.g. AAPL, TSLA, RELIANCE, BTCUSD)..."
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-          />
-          {query && (
-            <button onClick={() => setQuery('')} className="text-[#707a8a] hover:text-[#131722]">
-              <X className="w-4 h-4" />
-            </button>
-          )}
-          <span className="text-[10px] font-mono bg-[#e0e3eb] text-[#131722] font-bold px-2 py-0.5 rounded">ESC</span>
-        </div>
+    <AnimatePresence>
+      {isOpen && (
+        <motion.div
+          className="fixed inset-0 z-[60] flex items-start justify-center bg-black/60 p-4 pt-[12vh]"
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          exit={{ opacity: 0 }}
+          transition={{ duration: 0.15 }}
+          onMouseDown={(e) => e.target === e.currentTarget && onClose()}
+          onKeyDown={onKeyDown}
+        >
+          <motion.div
+            role="dialog"
+            aria-modal="true"
+            aria-label="Search instruments"
+            initial={{ opacity: 0, y: -12, scale: 0.98 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: -8, scale: 0.98 }}
+            transition={{ type: 'spring', stiffness: 480, damping: 36 }}
+            className="w-full max-w-2xl overflow-hidden rounded-xl border border-line-strong bg-overlay shadow-pop"
+          >
+            <div className="flex items-center gap-3 border-b border-line px-4 py-3">
+              <Search className="h-4 w-4 text-accent" />
+              <input
+                ref={inputRef}
+                type="text"
+                className="flex-1 bg-transparent font-mono text-sm text-fg outline-none placeholder:text-fg-subtle"
+                placeholder="Search symbol, company, index, crypto, forex (e.g. AAPL, RELIANCE, BTCUSD)…"
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+              />
+              {query && (
+                <button onClick={() => setQuery('')} className="text-fg-subtle hover:text-fg" aria-label="Clear search">
+                  <X className="h-4 w-4" />
+                </button>
+              )}
+              <kbd className="qf-kbd">ESC</kbd>
+            </div>
 
-        {/* Results List */}
-        <div className="max-h-[60vh] overflow-y-auto p-2 divide-y divide-[#f0f3fa]">
-          {loading ? (
-            <div className="p-8 text-center text-xs font-mono text-[#707a8a] animate-pulse">
-              Searching market data providers...
-            </div>
-          ) : results.length > 0 ? (
-            results.map((res) => {
-              const isPositive = res.changePercent >= 0;
-              return (
-                <div
-                  key={res.symbol}
-                  onClick={() => handleSelect(res.symbol, res.exchange, (res as any).providerSymbol)}
-                  className="flex items-center justify-between p-2.5 rounded hover:bg-[#f0f3fa] cursor-pointer group transition-colors"
-                >
-                  <div className="flex items-center space-x-3">
-                    <div className="w-8 h-8 rounded bg-[#e8f0fe] text-[#2962ff] flex items-center justify-center font-mono font-bold text-xs">
-                      {res.exchange === 'CRYPTO' ? <Activity className="w-4 h-4" /> : res.exchange === 'FOREX' ? <DollarSign className="w-4 h-4" /> : <Globe className="w-4 h-4" />}
-                    </div>
-                    <div>
-                      <div className="text-xs font-mono font-bold text-[#131722] group-hover:text-[#2962ff] flex items-center space-x-2">
-                        <span>{res.symbol}</span>
-                        <span className="text-[10px] bg-[#f0f3fa] text-[#707a8a] font-normal px-1.5 py-0.2 rounded border border-[#e0e3eb]">
-                          {res.exchange}
-                        </span>
-                      </div>
-                      <div className="text-[11px] font-mono text-[#707a8a] line-clamp-1">{res.name}</div>
-                    </div>
-                  </div>
-                  {res.price > 0 && (
-                    <div className="text-right font-mono">
-                      <div className="text-xs font-bold text-[#131722]">
-                        {res.currency === 'INR' ? '₹' : '$'}
-                        {res.price.toLocaleString(undefined, { minimumFractionDigits: 2 })}
-                      </div>
-                      <div className={`text-[11px] font-semibold ${isPositive ? 'text-[#089981]' : 'text-[#f23645]'}`}>
-                        {isPositive ? '+' : ''}
-                        {res.changePercent.toFixed(2)}%
-                      </div>
-                    </div>
-                  )}
+            <div className="max-h-[60vh] overflow-y-auto p-1.5">
+              {loading ? (
+                <div className="space-y-1 p-1.5">
+                  {Array.from({ length: 4 }).map((_, i) => (
+                    <div key={i} className="h-11 animate-pulse rounded-md bg-raised/60" />
+                  ))}
                 </div>
-              );
-            })
-          ) : query.trim() ? (
-            <div className="p-8 text-center text-xs font-mono text-[#707a8a]">
-              No instruments found matching "{query}".
+              ) : results.length > 0 ? (
+                results.map((res, i) => {
+                  const Icon = exchangeIcon(res.exchange);
+                  const active = i === cursor;
+                  return (
+                    <div
+                      key={`${res.symbol}-${res.exchange}`}
+                      onClick={() => handleSelect(res.symbol, res.exchange)}
+                      onMouseEnter={() => setCursor(i)}
+                      className={cn(
+                        'relative flex cursor-pointer items-center justify-between rounded-md px-3 py-2 transition-colors duration-100',
+                        active ? 'bg-raised' : 'hover:bg-raised/60',
+                      )}
+                    >
+                      {active && <span className="absolute inset-y-2 left-0 w-0.5 rounded-full bg-accent" />}
+                      <div className="flex min-w-0 items-center gap-3">
+                        <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md border border-line bg-bg/60 text-fg-muted">
+                          <Icon className="h-4 w-4" />
+                        </div>
+                        <div className="min-w-0">
+                          <div className="flex items-center gap-2 font-mono text-xs font-semibold text-fg">
+                            <span className={cn(active && 'text-accent')}>{res.symbol}</span>
+                            <span className="rounded border border-line px-1.5 text-3xs font-normal text-fg-subtle">{res.exchange}</span>
+                          </div>
+                          <div className="truncate text-[11px] text-fg-subtle">{res.name}</div>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-3">
+                        {res.price > 0 && (
+                          <div className="text-right font-mono">
+                            <div className="num text-xs font-semibold text-fg">
+                              {res.currency === 'INR' ? '₹' : '$'}
+                              {res.price.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                            </div>
+                            <div className={cn('num text-[11px] font-semibold', res.changePercent >= 0 ? 'text-up' : 'text-down')}>
+                              {formatSignedPercent(res.changePercent)}
+                            </div>
+                          </div>
+                        )}
+                        <CornerDownLeft className={cn('h-3.5 w-3.5 text-fg-subtle transition-opacity', active ? 'opacity-100' : 'opacity-0')} />
+                      </div>
+                    </div>
+                  );
+                })
+              ) : query.trim() ? (
+                <div className="p-8 text-center font-mono text-xs text-fg-subtle">No instruments found matching "{query}".</div>
+              ) : (
+                <div className="p-3">
+                  <div className="qf-label mb-2.5">Popular symbols</div>
+                  <div className="flex flex-wrap gap-1.5">
+                    {POPULAR.map((sym) => (
+                      <button
+                        key={sym}
+                        onClick={() => handleSelect(sym, sym.includes(':NSE') ? 'NSE' : sym.includes('USD') ? 'CRYPTO' : 'US')}
+                        className="flex items-center gap-1.5 rounded-md border border-line bg-bg/60 px-2.5 py-1.5 font-mono text-xs text-fg-muted transition-[border-color,color,transform] duration-150 hover:-translate-y-px hover:border-accent/50 hover:text-fg"
+                      >
+                        <TrendingUp className="h-3 w-3 text-accent" />
+                        <span>{sym}</span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
             </div>
-          ) : (
-            <div className="p-4">
-              <div className="text-[10px] font-mono text-[#707a8a] uppercase tracking-wider mb-2.5 font-bold">Popular Market Symbols</div>
-              <div className="flex flex-wrap gap-2">
-                {['AAPL', 'TSLA', 'NVDA', 'RELIANCE:NSE', 'TCS:NSE', 'BTCUSD', 'ETHUSD', 'EURUSD', 'GOLD'].map((sym) => (
-                  <button
-                    key={sym}
-                    onClick={() => handleSelect(sym, sym.includes(':NSE') ? 'NSE' : sym.includes('USD') ? 'CRYPTO' : 'US')}
-                    className="bg-[#f8f9fd] border border-[#e0e3eb] hover:border-[#2962ff] text-[#131722] font-mono text-xs px-2.5 py-1.5 rounded flex items-center space-x-1.5 transition-all hover:bg-[#e8f0fe]"
-                  >
-                    <TrendingUp className="w-3 h-3 text-[#2962ff]" />
-                    <span>{sym}</span>
-                  </button>
-                ))}
-              </div>
+
+            <div className="flex items-center gap-4 border-t border-line px-4 py-2 font-mono text-3xs uppercase tracking-wider text-fg-subtle">
+              <span className="flex items-center gap-1.5">
+                <kbd className="qf-kbd">↑↓</kbd> Navigate
+              </span>
+              <span className="flex items-center gap-1.5">
+                <kbd className="qf-kbd">↵</kbd> Open
+              </span>
+              <span className="flex items-center gap-1.5">
+                <kbd className="qf-kbd">esc</kbd> Close
+              </span>
             </div>
-          )}
-        </div>
-      </div>
-    </div>
+          </motion.div>
+        </motion.div>
+      )}
+    </AnimatePresence>
   );
 };

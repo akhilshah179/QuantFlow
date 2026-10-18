@@ -1,33 +1,26 @@
 import React from 'react';
 import { ConnectionStatus } from '../../types/ws';
+import { LiveDot } from '../ui/misc';
+import { cn } from '../../utils/cn';
 
 interface Props {
   status: ConnectionStatus;
 }
 
 export const ConnectionStatusBadge: React.FC<Props> = ({ status }) => {
-  if (status === 'CONNECTED') {
-    return (
-      <div className="flex items-center space-x-1.5 bg-[#089981]/10 text-[#089981] border border-[#089981]/30 text-xs px-2.5 py-1 rounded-full font-mono">
-        <span className="w-2 h-2 rounded-full bg-[#089981] animate-pulse" />
-        <span>Live</span>
-      </div>
-    );
-  }
-
-  if (status === 'RECONNECTING') {
-    return (
-      <div className="flex items-center space-x-1.5 bg-[#f5c900]/10 text-[#f5c900] border border-[#f5c900]/30 text-xs px-2.5 py-1 rounded-full font-mono">
-        <span className="w-2 h-2 rounded-full bg-[#f5c900] animate-ping" />
-        <span>Reconnecting...</span>
-      </div>
-    );
-  }
-
+  const tone = status === 'CONNECTED' ? 'up' : status === 'RECONNECTING' ? 'accent' : 'down';
+  const label = status === 'CONNECTED' ? 'Live' : status === 'RECONNECTING' ? 'Reconnecting…' : 'Offline';
   return (
-    <div className="flex items-center space-x-1.5 bg-[#f23645]/10 text-[#f23645] border border-[#f23645]/30 text-xs px-2.5 py-1 rounded-full font-mono">
-      <span className="w-2 h-2 rounded-full bg-[#f23645]" />
-      <span>Offline</span>
+    <div
+      className={cn(
+        'flex items-center gap-1.5 rounded-full px-2.5 py-1 font-mono text-xs ring-1 ring-inset',
+        tone === 'up' && 'bg-up/10 text-up ring-up/30',
+        tone === 'accent' && 'bg-accent/10 text-accent ring-accent/30',
+        tone === 'down' && 'bg-down/10 text-down ring-down/30',
+      )}
+    >
+      <LiveDot tone={tone} pulse={status !== 'DISCONNECTED'} />
+      <span>{label}</span>
     </div>
   );
 };

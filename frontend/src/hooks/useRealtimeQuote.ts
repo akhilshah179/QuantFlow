@@ -3,7 +3,8 @@ import { useMarketStore } from '../store/marketStore';
 import { WSTickUpdate } from '../types/ws';
 
 export function useRealtimeQuote(symbol: string): WSTickUpdate | null {
-  const quotes = useMarketStore((state) => state.quotes);
+  // Select only this symbol's quote so unrelated ticks don't re-render the caller.
+  const quote = useMarketStore((state) => (symbol ? state.quotes[symbol.toUpperCase()] : undefined));
   const subscribeSymbols = useMarketStore((state) => state.subscribeSymbols);
 
   useEffect(() => {
@@ -12,5 +13,5 @@ export function useRealtimeQuote(symbol: string): WSTickUpdate | null {
     }
   }, [symbol, subscribeSymbols]);
 
-  return quotes[symbol?.toUpperCase()] || null;
+  return quote || null;
 }

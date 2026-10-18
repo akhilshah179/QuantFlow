@@ -16,13 +16,8 @@ export class MockMarketDataProvider implements MarketDataProvider {
   private initializeQuotes() {
     const now = Date.now();
     GLOBAL_INSTRUMENT_CATALOG.forEach((item) => {
-      // Do not write mock 150.00 quotes for Forex pairs into Redis if real market data provider mode is active
-      if (item.assetType === 'FOREX' && config.marketDataProvider !== 'mock') {
-        return;
-      }
-      const basePrice = item.symbol === 'AAPL' ? 228.41 : item.symbol === 'TSLA' ? 215.30 : item.symbol === 'NVDA' ? 124.50 : 100.00;
+      const basePrice = item.symbol === 'AAPL' ? 228.41 : item.symbol === 'TSLA' ? 215.30 : item.symbol === 'NVDA' ? 124.50 : 150.00;
       const prevClose = Number((basePrice * 0.99).toFixed(2));
-
       const change = Number((basePrice - prevClose).toFixed(2));
       const changePercent = Number(((change / prevClose) * 100).toFixed(2));
 
@@ -236,5 +231,5 @@ export class MockMarketDataProvider implements MarketDataProvider {
 }
 
 export const mockMarketDataProvider = new MockMarketDataProvider();
-export { marketDataProvider } from './MarketDataProviderRouter';
+export { marketDataProviderRouter as marketDataProvider } from './MarketDataProviderRouter';
 

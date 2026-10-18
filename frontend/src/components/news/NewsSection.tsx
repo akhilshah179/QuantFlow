@@ -1,7 +1,11 @@
-import React, { useEffect, useState } from 'react';
-import api from '../../services/api';
-import { Newspaper, ExternalLink } from 'lucide-react';
+import React from 'react';
+import { motion } from 'motion/react';
+import { Newspaper, ArrowUpRight } from 'lucide-react';
 import { formatTime } from '../../utils/formatters';
+import { useNews } from '../../services/queries';
+import { Panel } from '../ui/Panel';
+import { EmptyState, Skeleton } from '../ui/misc';
+import { cn } from '../../utils/cn';
 
 export interface NewsArticle {
   id: string;
@@ -17,86 +21,94 @@ export interface NewsArticle {
 interface Props {
   symbol?: string;
   limit?: number;
+  /** `list` is a compact single-column wire for side panels. */
+  variant?: 'grid' | 'list';
+  className?: string;
 }
 
-export const NewsSection: React.FC<Props> = ({ symbol, limit = 6 }) => {
-  const [articles, setArticles] = useState<NewsArticle[]>([]);
-  const [loading, setLoading] = useState<boolean>(true);
-
-  useEffect(() => {
-    setLoading(true);
-    const endpoint = symbol ? `/news/${encodeURIComponent(symbol)}` : '/news';
-    api
-      .get(endpoint)
-      .then((res: any) => {
-        setArticles(Array.isArray(res) ? res : (res?.data || []));
-        setLoading(false);
-      })
-      .catch(() => {
-        setArticles([]);
-        setLoading(false);
-      });
-  }, [symbol]);
-
-  if (loading) {
-    return (
-      <div className="bg-white border border-[#e0e3eb] rounded-lg p-4 shadow-xs">
-        <div className="text-xs text-[#707a8a] font-mono animate-pulse">Loading financial news wire feed...</div>
-      </div>
-    );
-  }
+export const NewsSection: React.FC<Props> = ({ symbol, limit = 6, variant = 'grid', className }) => {
+  const { data: articles = [], isLoading } = useNews(symbol);
+  const isList = variant === 'list';
 
   return (
-    <div className="bg-white border border-[#e0e3eb] rounded-lg p-4 shadow-xs text-[#131722]">
-      <h2 className="text-xs font-bold font-mono text-[#131722] mb-3 flex items-center space-x-1.5 uppercase tracking-wider border-b border-[#f0f3fa] pb-2">
-        <Newspaper className="w-4 h-4 text-[#2962ff]" />
-        <span>{symbol ? `${symbol.toUpperCase()} Financial Intelligence` : 'Market News & Financial Wire'}</span>
-      </h2>
-
-      {articles.length > 0 ? (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
-          {articles.slice(0, limit).map((art) => (
-            <a
-              key={art.id}
-              href={art.url}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="bg-[#f8f9fd] border border-[#e0e3eb] rounded-lg p-3.5 flex flex-col justify-between hover:border-[#2962ff] transition-all group hover:bg-white shadow-2xs"
-            >
-              <div>
-                <div className="flex items-center justify-between text-[10px] font-mono text-[#707a8a] mb-1.5 font-semibold">
-                  <span className="text-[#2962ff] uppercase">{art.source}</span>
-                  <span>{formatTime(art.publishedAt)}</span>
-                </div>
-                <h3 className="text-xs font-bold text-[#131722] group-hover:text-[#2962ff] line-clamp-2 transition-colors">
-                  {art.title}
-                </h3>
-                <p className="text-[11px] text-[#707a8a] mt-1.5 line-clamp-2 leading-relaxed font-medium">
-                  {art.description}
-                </p>
-              </div>
-
-              <div className="mt-2.5 flex items-center justify-between pt-2 border-t border-[#e0e3eb]/60 text-[10px]">
-                {art.symbol ? (
-                  <span className="bg-[#e8f0fe] text-[#2962ff] font-mono px-1.5 py-0.5 rounded font-bold">
-                    ${art.symbol}
-                  </span>
-                ) : (
-                  <span className="text-[#707a8a] font-mono font-semibold">MARKET</span>
-                )}
-                <span className="flex items-center space-x-1 text-[#707a8a] group-hover:text-[#2962ff] font-mono font-bold">
-                  <span>Read Article</span>
-                  <ExternalLink className="w-3 h-3" />
-                </span>
-              </div>
-            </a>
+    <Panel
+      title={symbol ? `${symbol.toUpperCase()} · Intelligence` : 'Market Wire'}
+      icon={Newspaper}
+      className={className}
+      meta={<span className="font-mono text-3xs text-fg-subtle">{articles.length} stories</span>}
+      bodyClassName={isList ? 'p-0' : 'p-3.5'}
+    >
+      {isLoading ? (
+        <div className={cn(isList ? 'space-y-px p-3' : 'grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3')}>
+          {Array.from({ length: isList ? 5 : 3 }).map((_, i) => (
+            <Skeleton key={i} className={isList ? 'my-2 h-10' : 'h-32'} />
           ))}
         </div>
-      ) : (
-        <div className="p-6 text-center text-[#707a8a] font-mono text-xs border border-dashed border-[#e0e3eb] rounded-lg">
-          No live news articles available for {symbol ? symbol.toUpperCase() : 'market'}.
+      ) : articles.length > 0 ? (
+        <div className={cn(isList ? 'divide-y divide-line/60' : 'grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3')}>
+          {articles.slice(0, limit).map((art, i) =>
+            isList ? (
+              <motion.a
+                key={art.id}
+                href={art.url}
+                target="_blank"
+                rel="noopener noreferrer"
+                initial={{ opacity: 0, y: 4 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: Math.min(i, 8) * 0.03, duration: 0.2 }}
+                className="group flex gap-3 px-3.5 py-2.5 transition-colors hover:bg-raised/70"
+              >
+                <span className="num mt-0.5 w-10 shrink-0 text-2xs text-fg-subtle">{formatTime(art.publishedAt)}</span>
+                <span className="min-w-0 flex-1">
+                  <span className="line-clamp-2 text-xs font-medium leading-snug text-fg transition-colors group-hover:text-accent">{art.title}</span>
+                  <span className="mt-0.5 flex items-center gap-2 font-mono text-3xs uppercase tracking-wider text-fg-subtle">
+                    <span>{art.source}</span>
+                    {art.symbol && <span className="text-accent">${art.symbol}</span>}
+                  </span>
+                </span>
+                <ArrowUpRight className="mt-0.5 h-3.5 w-3.5 shrink-0 text-fg-subtle opacity-0 transition-[opacity,transform] duration-150 group-hover:-translate-y-0.5 group-hover:translate-x-0.5 group-hover:opacity-100" />
+              </motion.a>
+            ) : (
+              <motion.a
+                key={art.id}
+                href={art.url}
+                target="_blank"
+                rel="noopener noreferrer"
+                initial={{ opacity: 0, y: 6 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: Math.min(i, 8) * 0.04, duration: 0.22 }}
+                className="group flex flex-col justify-between rounded-md border border-line bg-bg/40 p-3.5 transition-[border-color,background-color,transform] duration-200 hover:-translate-y-0.5 hover:border-line-strong hover:bg-raised/60"
+              >
+                <div>
+                  <div className="mb-1.5 flex items-center justify-between font-mono text-3xs font-semibold uppercase tracking-wider text-fg-subtle">
+                    <span className="text-accent">{art.source}</span>
+                    <span className="num">{formatTime(art.publishedAt)}</span>
+                  </div>
+                  <h3 className="line-clamp-2 text-[13px] font-semibold leading-snug text-fg">{art.title}</h3>
+                  <p className="mt-1.5 line-clamp-2 text-xs leading-relaxed text-fg-subtle">{art.description}</p>
+                </div>
+                <div className="mt-3 flex items-center justify-between border-t border-line/70 pt-2 font-mono text-3xs uppercase tracking-wider">
+                  {art.symbol ? (
+                    <span className="rounded bg-accent/10 px-1.5 py-0.5 font-bold text-accent">${art.symbol}</span>
+                  ) : (
+                    <span className="text-fg-subtle">Market</span>
+                  )}
+                  <span className="flex items-center gap-1 text-fg-subtle transition-colors group-hover:text-fg">
+                    Read
+                    <ArrowUpRight className="h-3 w-3 transition-transform duration-150 group-hover:-translate-y-0.5 group-hover:translate-x-0.5" />
+                  </span>
+                </div>
+              </motion.a>
+            ),
+          )}
         </div>
+      ) : (
+        <EmptyState
+          icon={Newspaper}
+          title={`No live news articles available for ${symbol ? symbol.toUpperCase() : 'market'}.`}
+          className={isList ? 'm-3.5' : undefined}
+        />
       )}
-    </div>
+    </Panel>
   );
 };

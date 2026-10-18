@@ -1,24 +1,29 @@
 datasource db {
-  provider = "sqlite"
-  url      = "file:./dev.db"
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
 }
 
 generator client {
   provider = "prisma-client-js"
 }
 
+enum OrderType {
+  BUY
+  SELL
+}
+
+enum OrderStatus {
+  FILLED
+  CANCELLED
+  REJECTED
+}
+
 model User {
   id           String          @id @default(uuid())
   email        String          @unique
-  passwordHash String?
+  passwordHash String
   name         String
-  profileImage String?
-  authProvider String          @default("email")
-  googleId     String?         @unique
-  resetToken   String?
-  resetExpires DateTime?
-  lastLoginAt  DateTime?       @default(now())
-  virtualCash  Decimal         @default(100000.00)
+  virtualCash  Decimal         @default(100000.00) @db.Decimal(15, 2)
   createdAt    DateTime        @default(now())
   updatedAt    DateTime        @updatedAt
   watchlists   Watchlist[]
@@ -78,9 +83,9 @@ model Portfolio {
   id             String    @id @default(uuid())
   userId         String    @unique
   user           User      @relation(fields: [userId], references: [id], onDelete: Cascade)
-  cashBalance    Decimal   @default(100000.00)
-  investedAmount Decimal   @default(0.00)
-  realizedPnL    Decimal   @default(0.00)
+  cashBalance    Decimal   @default(100000.00) @db.Decimal(15, 2)
+  investedAmount Decimal   @default(0.00) @db.Decimal(15, 2)
+  realizedPnL    Decimal   @default(0.00) @db.Decimal(15, 2)
   createdAt      DateTime  @default(now())
   updatedAt      DateTime  @updatedAt
   holdings       Holding[]
@@ -93,8 +98,8 @@ model Holding {
   portfolioId     String
   portfolio       Portfolio @relation(fields: [portfolioId], references: [id], onDelete: Cascade)
   symbol          String
-  quantity        Decimal
-  averageBuyPrice Decimal
+  quantity        Decimal   @db.Decimal(15, 4)
+  averageBuyPrice Decimal   @db.Decimal(15, 4)
   createdAt       DateTime  @default(now())
   updatedAt       DateTime  @updatedAt
 
@@ -104,16 +109,16 @@ model Holding {
 }
 
 model Order {
-  id          String       @id @default(uuid())
+  id          String        @id @default(uuid())
   userId      String
-  user        User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user        User          @relation(fields: [userId], references: [id], onDelete: Cascade)
   symbol      String
-  type        String
-  status      String       @default("FILLED")
-  price       Decimal
-  quantity    Decimal
-  totalAmount Decimal
-  createdAt   DateTime     @default(now())
+  type        OrderType
+  status      OrderStatus   @default(FILLED)
+  price       Decimal       @db.Decimal(15, 4)
+  quantity    Decimal       @db.Decimal(15, 4)
+  totalAmount Decimal       @db.Decimal(15, 2)
+  createdAt   DateTime      @default(now())
   transaction Transaction?
 
   @@index([userId])
@@ -122,18 +127,18 @@ model Order {
 }
 
 model Transaction {
-  id          String   @id @default(uuid())
+  id          String    @id @default(uuid())
   userId      String
-  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  orderId     String   @unique
-  order       Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  orderId     String    @unique
+  order       Order     @relation(fields: [orderId], references: [id], onDelete: Cascade)
   symbol      String
-  type        String
-  price       Decimal
-  quantity    Decimal
-  totalAmount Decimal
-  realizedPnL Decimal  @default(0.00)
-  createdAt   DateTime @default(now())
+  type        OrderType
+  price       Decimal   @db.Decimal(15, 4)
+  quantity    Decimal   @db.Decimal(15, 4)
+  totalAmount Decimal   @db.Decimal(15, 2)
+  realizedPnL Decimal   @default(0.00) @db.Decimal(15, 2)
+  createdAt   DateTime  @default(now())
 
   @@index([userId])
   @@index([symbol])
@@ -145,7 +150,7 @@ model UserPreference {
   userId            String   @unique
   user              User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   defaultTimeframe  String   @default("1D")
-  defaultIndicators String   @default("[\"SMA_20\",\"RSI_14\"]")
+  defaultIndicators Json     @default("[\"SMA_20\",\"RSI_14\"]")
   theme             String   @default("DARK")
   createdAt         DateTime @default(now())
   updatedAt         DateTime @updatedAt
@@ -158,7 +163,7 @@ model Alert {
   userId      String
   user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
   symbol      String
-  targetPrice Decimal
+  targetPrice Decimal   @db.Decimal(15, 4)
   condition   String    // "ABOVE" | "BELOW"
   isActive    Boolean   @default(true)
   triggeredAt DateTime?
@@ -189,13 +194,13 @@ model TradeIdea {
 }
 
 model Comment {
-  id        String    @id @default(uuid())
-  ideaId    String
-  idea      TradeIdea @relation(fields: [ideaId], references: [id], onDelete: Cascade)
-  userId    String
-  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
-  content   String
-  createdAt DateTime  @default(now())
+  id          String    @id @default(uuid())
+  ideaId      String
+  idea        TradeIdea @relation(fields: [ideaId], references: [id], onDelete: Cascade)
+  userId      String
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  content     String
+  createdAt   DateTime  @default(now())
 
   @@index([ideaId])
   @@index([userId])

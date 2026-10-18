@@ -1,10 +1,10 @@
 import redisManager from '../redis/client';
-import { marketDataProvider } from '../providers/MarketDataProviderRouter';
+import { marketDataProvider } from '../providers/MockMarketDataProvider';
 import { StockQuote, TickUpdate, MarketStatusType } from '../providers/MarketDataProvider';
 import { instrumentService } from './instrumentService';
 
 export class MarketIngestionService {
-  private activeSubscriptions: Set<string> = new Set(['AAPL', 'TSLA', 'NVDA', 'MSFT', 'BTCUSD', 'ETHUSD', 'SOLUSD']);
+  private activeSubscriptions: Set<string> = new Set(['AAPL', 'TSLA', 'NVDA', 'MSFT']);
 
   public initialize() {
     console.log('[IngestionService] Initializing Real Market Data Ingestion Engine...');
@@ -27,13 +27,9 @@ export class MarketIngestionService {
       ? instrumentService.getMarketStatusForExchange(exchange)
       : tick.marketStatus || 'LIVE';
 
-    const isForex = inst?.assetType === 'FOREX' || symbol.length === 6 || symbol.includes('/') || ['EURUSD', 'GBPUSD', 'USDJPY', 'USDCHF', 'AUDUSD', 'USDCAD', 'NZDUSD', 'USDINR'].includes(symbol);
-    const decimals = isForex ? (symbol.includes('JPY') || symbol.includes('INR') ? 3 : 5) : 2;
-
     let prevClose = existingQuote ? existingQuote.previousClose : tick.price;
-    let change = Number((tick.price - prevClose).toFixed(decimals));
+    let change = Number((tick.price - prevClose).toFixed(2));
     let changePercent = prevClose > 0 ? Number(((change / prevClose) * 100).toFixed(2)) : 0;
-
 
     const updatedQuote: StockQuote = {
       symbol,
@@ -64,8 +60,6 @@ export class MarketIngestionService {
       isMock: tick.isMock || false,
       timestamp: Date.now(),
     };
-    (updatedQuote as any).source = tick.source || (existingQuote as any)?.source || 'MarketData';
-
 
     // Store in clean Redis key schema
     await redisManager.set(`market:stock:${symbol}:latest`, JSON.stringify(updatedQuote));

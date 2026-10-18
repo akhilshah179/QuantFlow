@@ -1,232 +1,189 @@
-import React, { useEffect, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
-import api from '../services/api';
-import { MarketOverviewData } from '../types/stock';
-import { formatCurrency, formatPercent, formatNumber } from '../utils/formatters';
-import { useMarketStore } from '../store/marketStore';
-import { TrendingUp, TrendingDown, Activity, Eye, Globe2, BarChart3, ShieldAlert } from 'lucide-react';
+import React from 'react';
+import { Link, useNavigate } from 'react-router-dom';
+import { ArrowUpRight, Flame, Gauge, ShieldAlert, Star, TrendingDown, TrendingUp } from 'lucide-react';
+import { useMarketOverview } from '../services/queries';
+import { useConnectionStatus } from '../store/marketStore';
+import { useWatchlistStore } from '../store/watchlistStore';
+import { useNow } from '../hooks/useNow';
+import { PHASE_LABEL, SESSIONS, sessionPhase } from '../utils/marketHours';
+import { formatPrice, formatSignedPercent } from '../utils/formatters';
+import { MarketStreamWall } from '../components/stream/MarketStreamWall';
+import { IndexCards } from '../components/market/IndexCards';
+import { MoversTable } from '../components/market/MoversTable';
+import { SessionBoard } from '../components/market/SessionBoard';
+import { PortfolioSnapshot } from '../components/market/PortfolioSnapshot';
 import { NewsSection } from '../components/news/NewsSection';
+import { Panel } from '../components/ui/Panel';
+import { LiveValue } from '../components/ui/LiveValue';
+import { EmptyState, LiveDot } from '../components/ui/misc';
+import { Button } from '../components/ui/Button';
+import { cn } from '../utils/cn';
 
-export const DashboardPage: React.FC = () => {
-  const navigate = useNavigate();
-  const [data, setData] = useState<MarketOverviewData | null>(null);
-  const [loading, setLoading] = useState(true);
-  const quotes = useMarketStore((state) => state.quotes);
-
-  useEffect(() => {
-    api.get('/stocks/market/overview')
-      .then((res: any) => {
-        const overviewObj = res && res.indices ? res : (res?.data || null);
-        setData(overviewObj);
-        setLoading(false);
-      })
-      .catch(() => setLoading(false));
-  }, []);
-
-  if (loading) {
-    return (
-      <div className="p-8 text-center text-[#707a8a] font-mono animate-pulse">
-        Loading TradingView Financial Terminal Overview...
-      </div>
-    );
-  }
-
-  if (!data) {
-    return (
-      <div className="p-8 text-center space-y-4 bg-white border border-[#e0e3eb] rounded-lg">
-        <div className="text-[#f23645] font-mono text-xs flex items-center justify-center space-x-2 font-bold">
-          <ShieldAlert className="w-4 h-4" />
-          <span>Market overview data currently unavailable.</span>
-        </div>
-        <button
-          onClick={() => {
-            setLoading(true);
-            api.get('/stocks/market/overview').then((res: any) => {
-              const overviewObj = res && res.indices ? res : (res?.data || null);
-              setData(overviewObj);
-              setLoading(false);
-            }).catch(() => setLoading(false));
-          }}
-          className="bg-[#2962ff] hover:bg-[#1e54e4] text-white px-4 py-1.5 rounded text-xs font-mono font-bold transition-colors"
-        >
-          Retry Connection
-        </button>
-      </div>
-    );
-  }
+/* Header: live timestamp + market status, isolated so the clock re-renders alone */
+const CommandHeader: React.FC<{ backendLive: boolean | undefined }> = ({ backendLive }) => {
+  const now = useNow(1000);
+  const status = useConnectionStatus();
+  const usPhase = sessionPhase(SESSIONS[0], now);
 
   return (
-    <div className="space-y-4 text-[#131722]">
-      {/* Page Banner Header */}
-      <div className="bg-white border border-[#e0e3eb] rounded-lg p-4 shadow-xs flex items-center justify-between">
-        <div>
-          <h1 className="text-lg font-bold font-mono text-[#131722] flex items-center space-x-2">
-            <Globe2 className="w-5 h-5 text-[#2962ff]" />
-            <span>Global Market Overview</span>
-          </h1>
-          <p className="text-xs text-[#707a8a] mt-0.5 font-medium">Real-time market indices, equity movers, volume statistics and financial intelligence</p>
+    <header className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
+      <div>
+        <div className="qf-label mb-1 flex items-center gap-2">
+          <Gauge className="h-3 w-3 text-accent" />
+          Overview / Command Center
         </div>
-        <div className="hidden sm:flex items-center space-x-2">
-          <span className="text-xs font-mono font-semibold text-[#707a8a]">MARKET STATUS:</span>
-          <span className="text-xs font-mono font-bold text-[#089981] bg-[#e6f4f1] px-2 py-0.5 rounded">OPEN</span>
-        </div>
+        <h1 className="text-xl font-semibold tracking-tight text-fg sm:text-2xl">
+          Global Markets{' '}
+          <span className="bg-gradient-to-r from-accent to-[#ffd58a] bg-clip-text text-transparent">Live</span>
+        </h1>
+        <p className="mt-0.5 text-xs text-fg-subtle">Indices, movers, order flow and your book — streaming in real time.</p>
       </div>
 
-      {/* Major Indices Cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
-        {data.indices.map((idx) => {
-          const isUp = idx.change >= 0;
-          return (
-            <div
-              key={idx.symbol}
-              className="bg-white border border-[#e0e3eb] rounded-lg p-3.5 hover:border-[#2962ff] transition-colors shadow-xs"
+      <div className="flex flex-wrap items-stretch gap-2 font-mono text-2xs">
+        <div className="qf-panel flex flex-col justify-center px-3 py-1.5">
+          <span className="text-3xs uppercase tracking-wider text-fg-subtle">
+            {now.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' })}
+          </span>
+          <span className="num text-base font-semibold leading-tight text-fg">
+            {now.toLocaleTimeString([], { hour12: false })}
+            <span className="ml-1.5 text-3xs font-normal text-fg-subtle">
+              {Intl.DateTimeFormat().resolvedOptions().timeZone.split('/').pop()?.replace('_', ' ')}
+            </span>
+          </span>
+        </div>
+        <div className="qf-panel flex flex-col justify-center px-3 py-1.5">
+          <span className="text-3xs uppercase tracking-wider text-fg-subtle">US Session</span>
+          <span
+            className={cn(
+              'flex items-center gap-1.5 text-xs font-semibold',
+              usPhase === 'OPEN' ? 'text-up' : usPhase === 'CLOSED' ? 'text-fg-muted' : 'text-accent',
+            )}
+          >
+            <LiveDot tone={usPhase === 'OPEN' ? 'up' : usPhase === 'CLOSED' ? 'muted' : 'accent'} pulse={usPhase === 'OPEN'} />
+            {PHASE_LABEL[usPhase]}
+          </span>
+        </div>
+        <div className="qf-panel flex flex-col justify-center px-3 py-1.5">
+          <span className="text-3xs uppercase tracking-wider text-fg-subtle">Feed</span>
+          <span
+            className={cn(
+              'flex items-center gap-1.5 text-xs font-semibold',
+              status === 'CONNECTED' ? 'text-up' : status === 'RECONNECTING' ? 'text-accent' : 'text-down',
+            )}
+          >
+            <LiveDot tone={status === 'CONNECTED' ? 'up' : status === 'RECONNECTING' ? 'accent' : 'down'} pulse={status !== 'DISCONNECTED'} />
+            {status === 'CONNECTED' ? (backendLive === false ? 'Connected · delayed' : 'Streaming') : status === 'RECONNECTING' ? 'Reconnecting' : 'Offline'}
+          </span>
+        </div>
+      </div>
+    </header>
+  );
+};
+
+/* Compact watchlist ----------------------------------------------------------- */
+
+const WatchlistMini: React.FC<{ className?: string }> = ({ className }) => {
+  const navigate = useNavigate();
+  const watchlists = useWatchlistStore((s) => s.watchlists);
+  const activeId = useWatchlistStore((s) => s.activeWatchlistId);
+  const active = watchlists.find((w) => w.id === activeId) || watchlists[0];
+  const items = active?.items.slice(0, 8) ?? [];
+
+  return (
+    <Panel
+      title={active ? `Watchlist · ${active.name}` : 'Watchlist'}
+      icon={Star}
+      className={className}
+      bodyClassName="p-0"
+      actions={
+        <Link to="/watchlists" className="flex items-center gap-0.5 font-mono text-3xs uppercase tracking-wider text-fg-subtle transition-colors hover:text-accent">
+          Manage <ArrowUpRight className="h-3 w-3" />
+        </Link>
+      }
+    >
+      {items.length === 0 ? (
+        <EmptyState icon={Star} title="Your watchlist is empty" hint="Add symbols from the Watchlists page or the side panel." className="m-3.5" />
+      ) : (
+        <div className="divide-y divide-line/50">
+          {items.map((item) => (
+            <button
+              key={item.id || item.symbol}
+              onClick={() => navigate(`/stocks/${item.symbol}`)}
+              className="group grid w-full grid-cols-12 items-center px-3.5 py-2 text-left font-mono text-xs transition-colors hover:bg-raised/70"
             >
-              <div className="flex items-center justify-between">
-                <span className="text-xs font-mono font-bold text-[#707a8a]">{idx.symbol}</span>
-                <span className={`text-xs font-mono font-bold px-1.5 py-0.5 rounded ${isUp ? 'bg-[#e6f4f1] text-[#089981]' : 'bg-[#fdecee] text-[#f23645]'}`}>
-                  {formatPercent(idx.changePercent)}
-                </span>
-              </div>
-              <div className="text-xs font-bold text-[#131722] mt-1 truncate">{idx.name}</div>
-              <div className="text-xl font-extrabold font-mono text-[#131722] mt-1">
-                {idx.value.toLocaleString()}
-              </div>
-            </div>
-          );
-        })}
-      </div>
-
-      {/* Market Movers Grid: Top Gainers & Top Decliners */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-        {/* Top Gainers */}
-        <div className="bg-white border border-[#e0e3eb] rounded-lg p-3.5 shadow-xs">
-          <div className="flex items-center justify-between mb-3 border-b border-[#f0f3fa] pb-2">
-            <h2 className="text-xs font-bold font-mono text-[#131722] flex items-center space-x-1.5 uppercase tracking-wider">
-              <TrendingUp className="w-4 h-4 text-[#089981]" />
-              <span>Top Market Gainers</span>
-            </h2>
-            <span className="text-[10px] font-mono text-[#707a8a]">REALTIME</span>
-          </div>
-          <div className="divide-y divide-[#f0f3fa]">
-            {data.topGainers.map((stock) => {
-              const liveTick = quotes[stock.symbol];
-              const price = liveTick ? liveTick.price : stock.price;
-              const changePercent = liveTick ? liveTick.changePercent : stock.changePercent;
-              return (
-                <div
-                  key={stock.symbol}
-                  onClick={() => navigate(`/stocks/${stock.symbol}`)}
-                  className="py-2 flex items-center justify-between hover:bg-[#f8f9fd] px-2 rounded cursor-pointer transition-colors"
-                >
-                  <div>
-                    <div className="font-mono font-bold text-xs text-[#131722]">{stock.symbol}</div>
-                    <div className="text-[11px] text-[#707a8a] truncate max-w-[180px] font-medium">{stock.name}</div>
-                  </div>
-                  <div className="text-right">
-                    <div className="font-mono font-bold text-xs text-[#131722]">{formatCurrency(price, stock.currency)}</div>
-                    <div className="font-mono text-[11px] text-[#089981] font-bold">
-                      +{changePercent.toFixed(2)}%
-                    </div>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
+              <span className="col-span-5 min-w-0">
+                <span className="block truncate font-semibold text-fg group-hover:text-accent">{item.symbol}</span>
+                <span className="block truncate font-sans text-3xs text-fg-subtle">{item.name}</span>
+              </span>
+              <span className="col-span-4 text-right">
+                <LiveValue symbol={item.symbol} value={item.price || undefined} format={(v) => formatPrice(v)} className="text-fg" />
+              </span>
+              <span className="col-span-3 text-right">
+                <LiveValue symbol={item.symbol} field="changePercent" value={item.changePercent} format={formatSignedPercent} signed />
+              </span>
+            </button>
+          ))}
         </div>
+      )}
+    </Panel>
+  );
+};
 
-        {/* Top Losers */}
-        <div className="bg-white border border-[#e0e3eb] rounded-lg p-3.5 shadow-xs">
-          <div className="flex items-center justify-between mb-3 border-b border-[#f0f3fa] pb-2">
-            <h2 className="text-xs font-bold font-mono text-[#131722] flex items-center space-x-1.5 uppercase tracking-wider">
-              <TrendingDown className="w-4 h-4 text-[#f23645]" />
-              <span>Top Market Decliners</span>
-            </h2>
-            <span className="text-[10px] font-mono text-[#707a8a]">REALTIME</span>
-          </div>
-          <div className="divide-y divide-[#f0f3fa]">
-            {data.topLosers.map((stock) => {
-              const liveTick = quotes[stock.symbol];
-              const price = liveTick ? liveTick.price : stock.price;
-              const changePercent = liveTick ? liveTick.changePercent : stock.changePercent;
-              return (
-                <div
-                  key={stock.symbol}
-                  onClick={() => navigate(`/stocks/${stock.symbol}`)}
-                  className="py-2 flex items-center justify-between hover:bg-[#f8f9fd] px-2 rounded cursor-pointer transition-colors"
-                >
-                  <div>
-                    <div className="font-mono font-bold text-xs text-[#131722]">{stock.symbol}</div>
-                    <div className="text-[11px] text-[#707a8a] truncate max-w-[180px] font-medium">{stock.name}</div>
-                  </div>
-                  <div className="text-right">
-                    <div className="font-mono font-bold text-xs text-[#131722]">{formatCurrency(price, stock.currency)}</div>
-                    <div className="font-mono text-[11px] text-[#f23645] font-bold">
-                      {changePercent.toFixed(2)}%
-                    </div>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
+/* Page ----------------------------------------------------------------------- */
+
+export const DashboardPage: React.FC = () => {
+  const { data, isLoading, isError, refetch, isFetching } = useMarketOverview('stocks');
+  const backendLive = data?.indices?.some((i) => i.marketStatus === 'LIVE' || i.marketStatus === 'OPEN');
+
+  return (
+    <div className="space-y-4">
+      <CommandHeader backendLive={data ? backendLive : undefined} />
+
+      {/* Hero: live market wall + sessions/portfolio */}
+      <div className="grid grid-cols-1 gap-4 xl:grid-cols-12">
+        <MarketStreamWall height={318} className="xl:col-span-8" />
+        <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:col-span-4 xl:grid-cols-1">
+          <PortfolioSnapshot />
+          <SessionBoard />
         </div>
       </div>
 
-      {/* Most Active Stocks Table */}
-      <div className="bg-white border border-[#e0e3eb] rounded-lg p-3.5 shadow-xs">
-        <div className="flex items-center justify-between mb-3 border-b border-[#f0f3fa] pb-2">
-          <h2 className="text-xs font-bold font-mono text-[#131722] flex items-center space-x-1.5 uppercase tracking-wider">
-            <Eye className="w-4 h-4 text-[#2962ff]" />
-            <span>Most Active Volume Equities</span>
-          </h2>
-          <span className="text-[10px] font-mono text-[#707a8a]">LIVE ORDER FLOW</span>
-        </div>
-        <div className="overflow-x-auto">
-          <table className="w-full text-left text-xs font-mono">
-            <thead>
-              <tr className="text-[#707a8a] border-b border-[#e0e3eb] uppercase text-[10px]">
-                <th className="pb-2">Symbol</th>
-                <th className="pb-2">Name</th>
-                <th className="pb-2">Price</th>
-                <th className="pb-2">Change %</th>
-                <th className="pb-2">Volume</th>
-                <th className="pb-2 text-right">Action</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-[#f0f3fa]">
-              {data.mostActive.map((stock) => {
-                const liveTick = quotes[stock.symbol];
-                const price = liveTick ? liveTick.price : stock.price;
-                const changePercent = liveTick ? liveTick.changePercent : stock.changePercent;
-                const isUp = changePercent >= 0;
-                return (
-                  <tr key={stock.symbol} className="hover:bg-[#f8f9fd] transition-colors">
-                    <td className="py-2.5 font-bold text-[#131722]">{stock.symbol}</td>
-                    <td className="py-2.5 text-[#707a8a] font-medium">{stock.name}</td>
-                    <td className="py-2.5 text-[#131722] font-bold">{formatCurrency(price, stock.currency)}</td>
-                    <td className="py-2.5">
-                      <span className={`font-bold px-1.5 py-0.5 rounded text-[11px] ${isUp ? 'bg-[#e6f4f1] text-[#089981]' : 'bg-[#fdecee] text-[#f23645]'}`}>
-                        {formatPercent(changePercent)}
-                      </span>
-                    </td>
-                    <td className="py-2.5 text-[#131722] font-medium">{formatNumber(liveTick ? liveTick.volume : stock.volume)}</td>
-                    <td className="py-2.5 text-right">
-                      <button
-                        onClick={() => navigate(`/stocks/${stock.symbol}`)}
-                        className="bg-[#e8f0fe] hover:bg-[#2962ff] text-[#2962ff] hover:text-white px-2.5 py-1 rounded transition-colors text-[10px] font-bold"
-                      >
-                        Analyze Chart
-                      </button>
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
-      </div>
+      {!isLoading && (isError || !data) ? (
+        <Panel>
+          <EmptyState
+            icon={ShieldAlert}
+            tone="down"
+            title="Market overview data currently unavailable."
+            action={
+              <Button variant="primary" size="sm" loading={isFetching} onClick={() => refetch()}>
+                Retry Connection
+              </Button>
+            }
+          />
+        </Panel>
+      ) : (
+        <>
+          <IndexCards indices={data?.indices} loading={isLoading} />
 
-      {/* Financial News Section */}
-      <NewsSection limit={6} />
+          <div className="grid grid-cols-1 gap-4 lg:grid-cols-2 2xl:grid-cols-3">
+            <MoversTable title="Top Gainers" icon={TrendingUp} iconTone="up" rows={data?.topGainers} loading={isLoading} />
+            <MoversTable title="Top Decliners" icon={TrendingDown} iconTone="down" rows={data?.topLosers} loading={isLoading} />
+            <MoversTable
+              title="Most Active"
+              icon={Flame}
+              rows={data?.mostActive}
+              loading={isLoading}
+              showVolume
+              className="lg:col-span-2 2xl:col-span-1"
+            />
+          </div>
+        </>
+      )}
+
+      <div className="grid grid-cols-1 gap-4 xl:grid-cols-12">
+        <WatchlistMini className="xl:col-span-5" />
+        <NewsSection limit={7} variant="list" className="xl:col-span-7" />
+      </div>
     </div>
   );
 };
